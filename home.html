@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Home</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+<nav class="nav">
+  <a href="home.html">Home</a>
+  <a href="index.html">Enter Shift</a>
+  <a href="summary.html">Summary</a>
+  <a href="shifts.html">All Shifts</a>
+  <a href="companies.html">Companies</a>
+  <a href="vehicles.html">Vehicles</a>
+  <a href="settings.html">Settings</a>
+</nav>
+
+<div class="container">
+  <div class="screen">
+    <h1>HGV Work Log</h1>
+    <div class="small" style="margin-top:-6px;">
+      Quick overview + setup checks. No spreadsheets harmed in the making of this page.
+    </div>
+
+    <div class="shift-card" style="margin-top:14px;">
+      <strong>Getting started</strong>
+      <div class="meta" id="setupStatus" style="margin-top:8px;"></div>
+
+      <div style="display:flex; gap:10px; margin-top:12px; flex-wrap:wrap;">
+        <a class="button-secondary" href="companies.html" style="display:inline-block; text-decoration:none; padding:12px 16px; border-radius:999px;">
+          Set up Companies
+        </a>
+        <a class="button-secondary" href="settings.html" style="display:inline-block; text-decoration:none; padding:12px 16px; border-radius:999px;">
+          Default Settings
+        </a>
+        <a class="button-secondary" href="index.html" style="display:inline-block; text-decoration:none; padding:12px 16px; border-radius:999px;">
+          Add a Shift
+        </a>
+      </div>
+    </div>
+
+    <h2 style="margin-top:18px;">This Week</h2>
+    <div class="grid" id="thisWeekTiles"></div>
+
+    <h2 style="margin-top:18px;">This Month</h2>
+    <div class="grid" id="thisMonthTiles"></div>
+
+    <div class="shift-card" style="margin-top:18px;">
+      <strong>Quick actions</strong>
+      <div class="meta" style="margin-top:8px;">
+        Jump straight to what you need.
+      </div>
+      <div style="display:flex; gap:10px; margin-top:12px; flex-wrap:wrap;">
+        <a class="button-secondary" href="index.html" style="display:inline-block; text-decoration:none; padding:12px 16px; border-radius:999px;">
+          Enter Shift
+        </a>
+        <a class="button-secondary" href="summary.html" style="display:inline-block; text-decoration:none; padding:12px 16px; border-radius:999px;">
+          View Summary
+        </a>
+        <a class="button-secondary" href="export.html" style="display:none;">Export</a>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<script src="app.js"></script>
+<script>
+  // Simple “setup checklist”
+  (function () {
+    const companies = JSON.parse(localStorage.getItem("companies")) || [];
+    const shifts = JSON.parse(localStorage.getItem("shifts")) || [];
+    const hasUserCompany = companies.some(c => c && c.id && c.id !== "cmp_default");
+    const hasAnyCompany = companies.length > 0;
+    const hasShift = shifts.length > 0;
+
+    const statusEl = document.getElementById("setupStatus");
+    if (!statusEl) return;
+
+    const items = [
+      { ok: hasAnyCompany, text: "Company system initialised" },
+      { ok: hasUserCompany, text: "At least 1 real company added" },
+      { ok: hasShift, text: "At least 1 shift saved" }
+    ];
+
+    statusEl.innerHTML = items.map(i => {
+      return `<div>${i.ok ? "✅" : "⬜"} ${i.text}</div>`;
+    }).join("");
+
+    // If they haven’t set up companies yet, nudge harder:
+    if (!hasUserCompany) {
+      statusEl.innerHTML += `<div style="margin-top:10px;" class="small">
+        Tip: Add your main employer/agency in <strong>Companies</strong> first — it makes pay and overtime accurate.
+      </div>`;
+    }
+
+    // Render the week/month tiles using your existing logic
+    if (typeof renderCurrentPeriodTiles === "function") {
+      renderCurrentPeriodTiles();
+    }
+  })();
+</script>
+
+</body>
+</html>
