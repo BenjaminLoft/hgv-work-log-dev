@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Settings</title>
+  <link rel="stylesheet" href="styles.css">
+ <meta name="viewport" content="width=device-width, initial-scale=1">
+</head>
+<body>
+
+<nav class="nav">
+  <a href="index.html">Enter Shift</a>
+  <a href="summary.html">Summary</a>
+  <a href="shifts.html">All Shifts</a>
+  <a href="companies.html">Companies</a>
+  <a href="vehicles.html">Vehicles</a>
+  <a href="settings.html">Settings</a>
+</nav>
+
+<div class="container">
+	<div class="screen">
+		<h2>Pay & Default Settings</h2>
+
+		<label>Default Start Time</label>
+		<input type="time" id="defaultStart">
+
+		<label>Base Hourly Rate</label>
+		<input type="number" step="0.01" id="baseRate">
+
+		<label>Base Weekly Hours</label>
+		<input type="number" id="baseHours">
+
+		<label>Overtime Multiplier (Mon–Fri)</label>
+		<input type="number" step="0.01" id="otWeekday">
+
+		<label>Overtime Multiplier (Saturday)</label>
+		<input type="number" step="0.01" id="otSaturday">
+
+		<label>Overtime Multiplier (Sunday)</label>
+		<input type="number" step="0.01" id="otSunday">
+
+		<label>Overtime Multiplier (Bank Holiday)</label>
+		<input type="number" step="0.01" id="otBankHoliday">
+
+		<button onclick="saveSettings()">Save Settings</button>
+
+		<h2>Backup</h2>
+		<button onclick="downloadBackup()">Download Backup</button>
+		<input type="file" id="restoreFile" onchange="restoreBackup(event)">
+	</div>
+</div>
+<script src="app.js"></script>
+
+</body>
+</html>

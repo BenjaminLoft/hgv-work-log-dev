@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>All Shifts</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+<nav class="nav">
+  <a href="index.html">Enter Shift</a>
+  <a href="summary.html">Summary</a>
+  <a href="shifts.html">All Shifts</a>
+  <a href="companies.html">Companies</a>
+  <a href="vehicles.html">Vehicles</a>
+  <a href="settings.html">Settings</a>
+</nav>
+
+<div class="container">
+	<div class="screen">
+		<h2>All Shifts (Weekly View)</h2>
+		<div id="shiftList"></div>
+	</div>
+</div>
+
+<script src="app.js"></script>
+<script>
+  if (typeof renderWeeklyGroupedShifts === "function") {
+    renderWeeklyGroupedShifts();
+  } else {
+    document.getElementById("shiftList").innerHTML =
+      "<div class='shift-card'>Weekly grouped shifts function is missing from app.js</div>";
+  }
+</script>
+
+</body>
+</html>

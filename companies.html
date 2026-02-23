@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Companies</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+<nav class="nav">
+  <a href="index.html">Enter Shift</a>
+  <a href="summary.html">Summary</a>
+  <a href="shifts.html">All Shifts</a>
+  <a href="vehicles.html">Vehicles</a>
+  <a href="settings.html">Settings</a>
+  <a href="companies.html">Companies</a>
+</nav>
+
+<div class="container">
+  <div class="screen">
+    <h1>Companies</h1>
+    <h2>Add / Edit Company</h2>
+
+    <!-- Hidden fields for edit state -->
+    <input type="hidden" id="companyId">
+
+    <label>Company Name</label>
+    <input type="text" id="companyName" placeholder="e.g. Acme Logistics">
+
+    <label>Base Hourly Rate (£)</label>
+    <input type="number" step="0.01" id="companyBaseRate" placeholder="e.g. 17.75">
+
+	<label>Pay Mode</label>
+	
+	<select id="payMode">
+		<option value="weekly">Weekly overtime (after base weekly hours)</option>
+		<option value="daily">Daily overtime (after X hours worked)</option>
+	</select>
+
+	<label>Daily OT after worked hours (only if Daily pay mode)</label>
+	<input type="number" step="0.25" id="dailyOTAfterWorkedHours" placeholder="e.g. 10">
+
+	<label>Minimum paid shift hours (optional)</label>
+	<input type="number" step="0.25" id="minPaidShiftHours" placeholder="e.g. 8">
+
+    <h2>Overtime Multipliers</h2>
+
+    <label>Mon–Fri</label>
+    <input type="number" step="0.01" id="otWeekday" placeholder="e.g. 1.25">
+
+    <label>Saturday</label>
+    <input type="number" step="0.01" id="otSaturday" placeholder="e.g. 1.25">
+
+    <label>Sunday</label>
+    <input type="number" step="0.01" id="otSunday" placeholder="e.g. 1.50">
+
+    <label>Bank Holiday</label>
+    <input type="number" step="0.01" id="otBankHoliday" placeholder="e.g. 2.00">
+
+    <h2>Hours Rules</h2>
+
+    <label>Base Weekly Hours</label>
+    <input type="number" step="0.01" id="baseWeeklyHours" placeholder="e.g. 45">
+
+    <label>Base Daily Paid Hours (Salaried)</label>
+    <input type="number" step="0.01" id="baseDailyPaidHours" placeholder="e.g. 9">
+
+    <label>Standard Shift Length (hrs) (optional)</label>
+    <input type="number" step="0.01" id="standardShiftLength" placeholder="e.g. 10">
+
+    <label>Minimum Paid Shift Hours (Agency/Assignments) (optional)</label>
+    <input type="number" step="0.01" id="minPaidShiftHours" placeholder="e.g. 8">
+
+    <h2>Contact</h2>
+
+    <label>Contact Name</label>
+    <input type="text" id="contactName" placeholder="e.g. Transport Manager">
+
+    <label>Contact Number</label>
+    <input type="tel" id="contactNumber" placeholder="e.g. 07...">
+
+    <button onclick="addOrUpdateCompany()">Save Company</button>
+    <button class="button-secondary" onclick="resetCompanyForm()">Clear</button>
+
+    <h2>Company List</h2>
+    <div id="companyList"></div>
+  </div>
+</div>
+
+<script src="app.js"></script>
+</body>
+</html>

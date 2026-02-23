@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="stylesheet" href="styles.css">
+  <title>HGV Work Log</title>
+</head>
+<body>
+
+<nav class="nav">
+  <a href="index.html">Enter Shift</a>
+  <a href="summary.html">Summary</a>
+  <a href="shifts.html">All Shifts</a>
+  <a href="companies.html">Companies</a>
+  <a href="vehicles.html">Vehicles</a>
+  <a href="settings.html">Settings</a>
+</nav>
+
+<div class="container">
+  <div class="screen">
+    <h1>HGV Work Log</h1>
+    <h2>Add / Edit Shift</h2>
+
+    <label>Company</label>
+    <select id="company"></select>
+    <div class="small" style="margin-top:6px;">
+      Company settings (rate, overtime, mins) will be used unless you override them below.
+    </div>
+
+    <label>Date</label>
+    <input type="date" id="date">
+
+    <label>Start Time</label>
+    <input type="time" id="start">
+
+    <label>Finish Time</label>
+    <input type="time" id="finish">
+
+    <label>Vehicle</label>
+    <select id="vehicle"></select>
+
+    <label>Trailer 1</label>
+    <input type="text" id="trailer1">
+
+    <label>Trailer 2</label>
+    <input type="text" id="trailer2">
+
+    <label>Defects</label>
+    <textarea id="defects"></textarea>
+
+    <div class="checkbox-row">
+      <input type="checkbox" id="annualLeave">
+      <span>Annual Leave (9 hrs)</span>
+    </div>
+
+    <div class="checkbox-row">
+      <input type="checkbox" id="bankHoliday">
+      <span>Bank Holiday</span>
+    </div>
+
+    <!-- Advanced / Overrides -->
+    <div class="section" style="margin-top:16px;">
+      <div class="week-group" style="margin-top:0;">
+        <div class="week-header" onclick="toggleOverrides()">
+          <span>Advanced (Overrides)</span>
+          <span class="small">Optional</span>
+        </div>
+        <div class="week-content" id="overridePanel" style="display:none;">
+
+          <label>Override Base Hourly Rate (£)</label>
+          <input type="number" step="0.01" id="overrideBaseRate" placeholder="Leave blank to use company">
+
+          <label>Override Break Hours</label>
+          <input type="number" step="0.25" id="overrideBreakHours" placeholder="Leave blank to use company">
+
+          <label>Override OT Multiplier (Mon–Fri)</label>
+          <input type="number" step="0.01" id="overrideOtWeekday" placeholder="Leave blank to use company">
+
+          <label>Override OT Multiplier (Saturday)</label>
+          <input type="number" step="0.01" id="overrideOtSaturday" placeholder="Leave blank to use company">
+
+          <label>Override OT Multiplier (Sunday)</label>
+          <input type="number" step="0.01" id="overrideOtSunday" placeholder="Leave blank to use company">
+
+          <label>Override OT Multiplier (Bank Holiday)</label>
+          <input type="number" step="0.01" id="overrideOtBankHoliday" placeholder="Leave blank to use company">
+
+          <button class="button-secondary" onclick="clearOverrides()" type="button">Clear Overrides</button>
+
+        </div>
+      </div>
+    </div>
+
+    <button onclick="addOrUpdateShift()">Save Shift</button>
+  </div>
+</div>
+
+<script src="app.js"></script>
+
+<script>
+  function toggleOverrides(){
+    const el = document.getElementById("overridePanel");
+    if(!el) return;
+    el.style.display = (el.style.display === "none") ? "block" : "none";
+  }
+
+  function clearOverrides(){
+    const ids = [
+      "overrideBaseRate","overrideBreakHours",
+      "overrideOtWeekday","overrideOtSaturday","overrideOtSunday","overrideOtBankHoliday"
+    ];
+    ids.forEach(id=>{
+      const el = document.getElementById(id);
+      if(el) el.value = "";
+    });
+  }
+</script>
+
+</body>
+</html>

@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Summary</title>
+  <link rel="stylesheet" href="styles.css">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+</head>
+<body>
+
+<nav class="nav">
+  <a href="index.html">Enter Shift</a>
+  <a href="summary.html">Summary</a>
+  <a href="shifts.html">All Shifts</a>
+  <a href="companies.html">Companies</a>
+  <a href="vehicles.html">Vehicles</a>
+  <a href="settings.html">Settings</a>
+</nav>
+
+<div class="container">
+  <div class="screen">
+    <h1>Summary</h1>
+
+    <h2>This Week (Mon–Sun)</h2>
+	<div class="grid" id="thisWeekTiles"></div>
+
+	<h2>This Month</h2>
+	<div class="grid" id="thisMonthTiles"></div>
+
+    <div class="section">
+      <h2>By Company</h2>
+      <div id="companySummary"></div>
+    </div>
+
+    <div class="section">
+      <h2>Weekly Breakdown</h2>
+      <div id="weeklySummary"></div>
+
+      <button onclick="exportSection('weeklySummary')">Export Weekly PDF</button>
+    </div>
+
+    <div class="section">
+      <h2>Monthly Breakdown</h2>
+      <div id="monthlySummary"></div>
+
+      <button onclick="exportSection('monthlySummary')">Export Monthly PDF</button>
+    </div>
+
+    <div class="section">
+      <h2>Backup</h2>
+      <button onclick="downloadBackup()">Download Backup</button>
+      <input type="file" id="restoreFile" onchange="restoreBackup(event)">
+    </div>
+  </div>
+</div>
+
+<script src="app.js"></script>
+</body>
+</html>
