@@ -613,6 +613,42 @@ function clearForm() {
    PAY ENGINE
 ================================ */
 
+function sumResults(a, b){
+  return {
+    worked: (a.worked||0) + (b.worked||0),
+    breaks: (a.breaks||0) + (b.breaks||0),
+    paid: (a.paid||0) + (b.paid||0),
+    otHours: (a.otHours||0) + (b.otHours||0),
+    basePay: (a.basePay||0) + (b.basePay||0),
+    otPay: (a.otPay||0) + (b.otPay||0),
+    total: (a.total||0) + (b.total||0),
+  };
+}
+
+function processMonthAsWeeks(monthShifts, modeForWeek){
+  // monthShifts = all shifts in the month (any companies)
+  // modeForWeek = "overall" or "perCompany"
+  if (!Array.isArray(monthShifts) || monthShifts.length === 0){
+    return { worked:0, breaks:0, paid:0, otHours:0, basePay:0, otPay:0, total:0 };
+  }
+
+  // group month shifts into Mon–Sun weeks
+  const weeks = {};
+  monthShifts.forEach(s=>{
+    const wk = getWeekStartMonday(s.date);   // you already have this helper
+    if (!weeks[wk]) weeks[wk] = [];
+    weeks[wk].push(s);
+  });
+
+  // run weekly calc per week and sum
+  return Object.keys(weeks)
+    .sort((a,b)=> new Date(a) - new Date(b))
+    .reduce((acc, wk)=>{
+      const weekResult = processShifts(weeks[wk], modeForWeek); // weekly logic lives here
+      return sumResults(acc, weekResult);
+    }, { worked:0, breaks:0, paid:0, otHours:0, basePay:0, otPay:0, total:0 });
+}
+
 function getShiftRateProfile(shift) {
   const c = getCompanyById(shift.companyId);
 
@@ -869,7 +905,7 @@ function renderCurrentPeriodTiles() {
   const ym = new Date().toISOString().slice(0, 7);
   const monthShifts = shifts.filter(s => (s.date || "").slice(0, 7) === ym);
 
-  const monthResult = processShifts(monthShifts, "monthOverall");
+  const monthResult = processMonthAsWeeks(monthShifts, "overall");
   renderBreakdownTiles("thisMonthTiles", "This Month", monthResult);
 }
 /* ===============================
@@ -1026,7 +1062,7 @@ function renderCompanySummary() {
 
     // Per-company summaries should always use perCompany + monthOverall
     const w = processShifts(weekBy[cid] || [], "perCompany");
-    const m = processShifts(monthBy[cid] || [], "monthOverall");
+    const m = processMonthAsWeeks(monthBy[cid] || [], "perCompany");
 
     return `
       <div class="week-group">
