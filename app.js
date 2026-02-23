@@ -1099,39 +1099,334 @@ function renderMonthly() {
    EXPORT (Print to PDF)
 ================================ */
 
-function exportSection(sectionId) {
-  const el = document.getElementById(sectionId);
-  if (!el) {
-    alert("Nothing to export on this page.");
-    return;
+function fmtMoney(n){
+  const x = Number(n || 0);
+  return "£" + x.toFixed(2);
+}
+function fmtHours(n){
+  const x = Number(n || 0);
+  return x.toFixed(2) + " hrs";
+}
+function esc(str){
+  return String(str ?? "")
+    .replaceAll("&","&amp;")
+    .replaceAll("<","&lt;")
+    .replaceAll(">","&gt;")
+    .replaceAll('"',"&quot;")
+    .replaceAll("'","&#039;");
+}
+
+function getWeekRangeForDate(d = new Date()){
+  const now = new Date(d);
+  const day = now.getDay(); // 0 Sun..6 Sat
+  const diff = (day === 0 ? -6 : 1) - day; // Monday start
+  now.setDate(now.getDate() + diff);
+  now.setHours(0,0,0,0);
+  const start = new Date(now);
+  const end = new Date(now); end.setDate(end.getDate() + 6); end.setHours(23,59,59,999);
+  const startStr = start.toISOString().slice(0,10);
+  const endStr = end.toISOString().slice(0,10);
+  return { start, end, startStr, endStr };
+}
+
+function getMonthRangeForDate(d = new Date()){
+  const start = new Date(d.getFullYear(), d.getMonth(), 1);
+  start.setHours(0,0,0,0);
+  const end = new Date(d.getFullYear(), d.getMonth() + 1, 0);
+  end.setHours(23,59,59,999);
+  const startStr = start.toISOString().slice(0,10);
+  const endStr = end.toISOString().slice(0,10);
+  return { start, end, startStr, endStr, ym: start.toISOString().slice(0,7) };
+}
+
+function dateOnlyToLocalDate(dateStr){
+  // stored as YYYY-MM-DD
+  return new Date((dateStr || "") + "T00:00:00");
+}
+
+function groupByCompanyId(arr){
+  const out = {};
+  arr.forEach(s=>{
+    const cid = s.companyId || "";
+    if(!out[cid]) out[cid] = [];
+    out[cid].push(s);
+  });
+  return out;
+}
+
+function buildPayslipHTML({ title, periodLabel, periodStart, periodEnd, overall, byCompany, rows }) {
+  // Lightweight print CSS – professional and readable
+  const css = `
+    :root{ --ink:#111; --muted:#5b5b5b; --line:#e6e6e6; --card:#fafafa; }
+    *{ box-sizing:border-box; }
+    body{ font-family: "Segoe UI", Arial, sans-serif; color:var(--ink); margin:0; padding:24px; }
+    .wrap{ max-width: 900px; margin:0 auto; }
+    .top{ display:flex; justify-content:space-between; align-items:flex-start; gap:20px; }
+    h1{ margin:0; font-size:20px; letter-spacing:.2px; }
+    .meta{ color:var(--muted); font-size:12px; line-height:1.4; margin-top:6px; }
+    .chip{ display:inline-block; padding:6px 10px; border:1px solid var(--line); border-radius:999px; font-size:12px; color:var(--muted); background:#fff; }
+    .rule{ height:1px; background:var(--line); margin:16px 0; }
+    .grid{ display:grid; grid-template-columns: repeat(4, 1fr); gap:12px; }
+    .kpi{ border:1px solid var(--line); background:var(--card); border-radius:12px; padding:12px; }
+    .kpi .l{ font-size:11px; color:var(--muted); text-transform:uppercase; letter-spacing:.12em; }
+    .kpi .v{ margin-top:6px; font-size:16px; font-weight:700; }
+    h2{ margin:18px 0 8px; font-size:14px; color:var(--muted); letter-spacing:.08em; text-transform:uppercase; }
+    table{ width:100%; border-collapse:collapse; font-size:12px; }
+    th,td{ padding:10px 8px; border-bottom:1px solid var(--line); vertical-align:top; }
+    th{ text-align:left; color:var(--muted); font-weight:700; font-size:11px; text-transform:uppercase; letter-spacing:.10em; }
+    .right{ text-align:right; }
+    .small{ color:var(--muted); font-size:11px; }
+    .totals{ margin-top:10px; display:flex; justify-content:flex-end; }
+    .totals .box{ width:320px; border:1px solid var(--line); border-radius:12px; background:var(--card); padding:12px; }
+    .row{ display:flex; justify-content:space-between; padding:6px 0; border-bottom:1px dashed var(--line); }
+    .row:last-child{ border-bottom:none; }
+    .row strong{ font-weight:800; }
+    @media print{
+      body{ padding:0; }
+      .wrap{ max-width: none; margin:0; }
+      a{ color:inherit; text-decoration:none; }
+    }
+  `;
+
+  const baseHours = Math.max(0, Number(overall.paid||0) - Number(overall.otHours||0));
+
+  const companyRows = Object.keys(byCompany || {})
+    .sort((a,b)=>{
+      const an = getCompanyById(a)?.name || "Unknown";
+      const bn = getCompanyById(b)?.name || "Unknown";
+      return an.localeCompare(bn);
+    })
+    .map(cid=>{
+      const r = byCompany[cid];
+      const name = getCompanyById(cid)?.name || "Unknown Company";
+      const baseH = Math.max(0, Number(r.paid||0) - Number(r.otHours||0));
+      return `
+        <tr>
+          <td><strong>${esc(name)}</strong><div class="small">${esc(cid)}</div></td>
+          <td class="right">${fmtHours(r.worked)}</td>
+          <td class="right">${fmtHours(r.breaks)}</td>
+          <td class="right">${fmtHours(r.paid)}</td>
+          <td class="right">${fmtHours(baseH)}</td>
+          <td class="right">${fmtHours(r.otHours)}</td>
+          <td class="right">${fmtMoney(r.basePay)}</td>
+          <td class="right">${fmtMoney(r.otPay)}</td>
+          <td class="right"><strong>${fmtMoney(r.total)}</strong></td>
+        </tr>
+      `;
+    }).join("");
+
+  const shiftRows = rows.map(s=>{
+    const companyName = getCompanyById(s.companyId)?.name || "Unknown Company";
+    const flags = [
+      s.annualLeave ? "AL" : "",
+      s.bankHoliday ? "BH" : ""
+    ].filter(Boolean).join(" ");
+
+    return `
+      <tr>
+        <td><strong>${esc(s.date)}</strong>${flags ? `<div class="small">${esc(flags)}</div>` : ""}</td>
+        <td>${esc(companyName)}</td>
+        <td>${esc(s.start || "")}–${esc(s.finish || "")}</td>
+        <td>${esc(s.vehicle || "")}</td>
+        <td class="right">${fmtHours(s.worked)}</td>
+        <td class="right">${fmtHours(s.breaks)}</td>
+        <td class="right">${fmtHours(s.paid)}</td>
+        <td class="right">${fmtMoney((s.__payTotal || 0))}</td>
+      </tr>
+    `;
+  }).join("");
+
+  return `
+    <html>
+      <head>
+        <meta charset="utf-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <title>${esc(title)}</title>
+        <style>${css}</style>
+      </head>
+      <body>
+        <div class="wrap">
+          <div class="top">
+            <div>
+              <h1>${esc(title)}</h1>
+              <div class="meta">
+                <div><strong>Period:</strong> ${esc(periodLabel)} (${esc(periodStart)} → ${esc(periodEnd)})</div>
+                <div><strong>Generated:</strong> ${esc(new Date().toLocaleString())}</div>
+              </div>
+            </div>
+            <div class="chip">HGV Work Log</div>
+          </div>
+
+          <div class="rule"></div>
+
+          <h2>Overall Summary</h2>
+          <div class="grid">
+            <div class="kpi"><div class="l">Worked</div><div class="v">${fmtHours(overall.worked)}</div></div>
+            <div class="kpi"><div class="l">Breaks</div><div class="v">${fmtHours(overall.breaks)}</div></div>
+            <div class="kpi"><div class="l">Paid</div><div class="v">${fmtHours(overall.paid)}</div></div>
+            <div class="kpi"><div class="l">OT Hours</div><div class="v">${fmtHours(overall.otHours)}</div></div>
+
+            <div class="kpi"><div class="l">Base Hours</div><div class="v">${fmtHours(baseHours)}</div></div>
+            <div class="kpi"><div class="l">Base Pay</div><div class="v">${fmtMoney(overall.basePay)}</div></div>
+            <div class="kpi"><div class="l">OT Pay</div><div class="v">${fmtMoney(overall.otPay)}</div></div>
+            <div class="kpi"><div class="l">Total Pay</div><div class="v">${fmtMoney(overall.total)}</div></div>
+          </div>
+
+          <h2>By Company</h2>
+          <table>
+            <thead>
+              <tr>
+                <th>Company</th>
+                <th class="right">Worked</th>
+                <th class="right">Breaks</th>
+                <th class="right">Paid</th>
+                <th class="right">Base Hrs</th>
+                <th class="right">OT Hrs</th>
+                <th class="right">Base Pay</th>
+                <th class="right">OT Pay</th>
+                <th class="right">Total</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${companyRows || `<tr><td colspan="9" class="small">No company data for this period.</td></tr>`}
+            </tbody>
+          </table>
+
+          <h2>Shift Lines</h2>
+          <table>
+            <thead>
+              <tr>
+                <th>Date</th>
+                <th>Company</th>
+                <th>Time</th>
+                <th>Vehicle</th>
+                <th class="right">Worked</th>
+                <th class="right">Breaks</th>
+                <th class="right">Paid</th>
+                <th class="right">Pay</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${shiftRows || `<tr><td colspan="8" class="small">No shifts in this period.</td></tr>`}
+            </tbody>
+          </table>
+
+          <div class="totals">
+            <div class="box">
+              <div class="row"><span>Base Pay</span><span>${fmtMoney(overall.basePay)}</span></div>
+              <div class="row"><span>Overtime Pay</span><span>${fmtMoney(overall.otPay)}</span></div>
+              <div class="row"><strong>Total</strong><strong>${fmtMoney(overall.total)}</strong></div>
+              <div class="small" style="margin-top:8px;">
+                Note: This is a calculation summary from HGV Work Log. Verify against payslips/invoices.
+              </div>
+            </div>
+          </div>
+
+        </div>
+      </body>
+    </html>
+  `;
+}
+
+function exportPayslip(period = "week") {
+  ensureDefaultCompany();
+
+  // Decide the set of shifts for the period
+  let periodLabel = "";
+  let periodStart = "";
+  let periodEnd = "";
+  let periodShifts = [];
+
+  if (period === "month") {
+    const r = getMonthRangeForDate(new Date());
+    periodLabel = "Month";
+    periodStart = r.startStr;
+    periodEnd = r.endStr;
+
+    periodShifts = shifts.filter(s => (s.date || "").slice(0,7) === r.ym);
+
+    // Month totals: no weekly threshold allocation across the month
+    // (still respects BH and daily OT split)
+    var overall = processShifts(periodShifts, "monthOverall");
+  } else {
+    const r = getWeekRangeForDate(new Date());
+    periodLabel = "Week (Mon–Sun)";
+    periodStart = r.startStr;
+    periodEnd = r.endStr;
+
+    periodShifts = shifts.filter(s => {
+      const d = dateOnlyToLocalDate(s.date);
+      return d >= r.start && d <= r.end;
+    });
+
+    // Week totals: overall combined logic
+    var overall = processShifts(periodShifts, "overall");
   }
 
-  const win = window.open("", "", "height=700,width=700");
+  // By company breakdown
+  const byCompany = {};
+  const grouped = groupByCompanyId(periodShifts);
+  Object.keys(grouped).forEach(cid=>{
+    if(!cid) return;
+    // per-company view should be perCompany for week, monthOverall for month
+    byCompany[cid] = (period === "month")
+      ? processShifts(grouped[cid], "monthOverall")
+      : processShifts(grouped[cid], "perCompany");
+  });
+
+  // Itemised lines: estimate per-shift pay so the line table has a "Pay" column.
+  // We calculate per shift: baseHours + otHours (daily), BH full shift at BH multiplier.
+  const rows = periodShifts
+    .slice()
+    .sort((a,b)=> (a.date||"").localeCompare(b.date||"") || (a.start||"").localeCompare(b.start||""))
+    .map(s=>{
+      const profile = getShiftRateProfile(s);
+      const mult = getShiftOTMultiplier(s, profile);
+
+      // base/ot split: prefer stored, else compute
+      const paid = Number(s.paid || 0);
+      let baseH = Number(s.baseHours);
+      let otH = Number(s.otHours);
+
+      if (!Number.isFinite(baseH) || !Number.isFinite(otH)) {
+        const split = splitPaidIntoBaseAndOT_DailyWorked(s);
+        baseH = split.baseHours;
+        otH = split.otHours;
+      }
+
+      // bank holiday: whole paid treated as OT
+      let linePay = 0;
+      if (s.bankHoliday) {
+        linePay = paid * profile.baseRate * mult;
+      } else {
+        linePay = (Number(baseH||0) * profile.baseRate) + (Number(otH||0) * profile.baseRate * mult);
+      }
+
+      return { ...s, __payTotal: linePay };
+    });
+
+  const html = buildPayslipHTML({
+    title: `Payslip Summary`,
+    periodLabel,
+    periodStart,
+    periodEnd,
+    overall,
+    byCompany,
+    rows
+  });
+
+  const win = window.open("", "", "height=900,width=900");
   if (!win) {
     alert("Pop-up blocked. Please allow pop-ups for PDF export.");
     return;
   }
 
-  // Basic styling so the export isn't ugly
-  win.document.write(`
-    <html>
-      <head>
-        <title>Export</title>
-        <style>
-          body { font-family: Arial; padding: 20px; }
-          .shift-card { border: 1px solid #ddd; border-radius: 8px; padding: 10px; margin: 10px 0; }
-        </style>
-      </head>
-      <body>
-        ${el.innerHTML}
-      </body>
-    </html>
-  `);
-
+  win.document.open();
+  win.document.write(html);
   win.document.close();
   win.focus();
 
-  // iOS Safari: print dialog allows "Save to Files" -> PDF
+  // Print dialog = Save as PDF (desktop) / Save to Files (iOS)
   win.print();
 }
 
