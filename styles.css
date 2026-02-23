@@ -336,3 +336,5 @@ input[type="file"]{
   margin-top: 0;
   white-space: nowrap;
 }
+
+[hidden] { display: none !important; }

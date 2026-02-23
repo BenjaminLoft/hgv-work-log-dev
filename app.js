@@ -311,6 +311,8 @@ function editCompany(id) {
 
   document.getElementById("contactName").value = c.contactName ?? "";
   document.getElementById("contactNumber").value = c.contactNumber ?? "";
+  
+  updateCompanyFormVisibility();
 }
 
 function deleteCompany(id) {
@@ -379,6 +381,8 @@ function resetCompanyForm() {
   if (document.getElementById("nightBonusAmount")) document.getElementById("nightBonusAmount").value = 0.5;
   if (document.getElementById("nightBonusStart")) document.getElementById("nightBonusStart").value = "22:00";
   if (document.getElementById("nightBonusEnd")) document.getElementById("nightBonusEnd").value = "06:00";
+  
+  updateCompanyFormVisibility();
 }
 
 /* ===============================
@@ -1089,6 +1093,28 @@ function toggleCompanySummary(companyId) {
   el.style.display = (el.style.display === "none") ? "block" : "none";
 }
 
+function updateCompanyFormVisibility() {
+  const payModeEl = document.getElementById("payMode");
+  const nbModeEl = document.getElementById("nightBonusMode");
+  if (!payModeEl && !nbModeEl) return; // not on companies page
+
+  const dailyOTRow = document.getElementById("dailyOTRow");
+  const nightWindow = document.getElementById("nightBonusWindow");
+
+  if (dailyOTRow) {
+    dailyOTRow.hidden = (payModeEl?.value !== "daily");
+  }
+
+  if (nightWindow) {
+    nightWindow.hidden = (nbModeEl?.value === "none");
+  }
+}
+
+document.addEventListener("change", (e) => {
+  if (e.target?.id === "payMode" || e.target?.id === "nightBonusMode") {
+    updateCompanyFormVisibility();
+  }
+});
 /* ===============================
    WEEKLY + MONTHLY LISTS (legacy blocks)
    (kept minimal; your tiles + company summary are the “modern” bit)
@@ -1267,7 +1293,7 @@ function deleteShift(index) {
 function startEditShift(index) {
   if (!Number.isInteger(index) || index < 0 || index >= shifts.length) return;
   localStorage.setItem("editShiftIndex", String(index));
-  window.location.href = "index.html";
+  window.location.href = "enter-shift.html";
 }
 
 function loadShiftForEditingIfRequested() {
@@ -1717,4 +1743,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
   // Shifts page
   renderWeeklyGroupedShifts();
+  
+  // Companies page
+  updateCompanyFormVisibility();
 });
