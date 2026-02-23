@@ -183,11 +183,15 @@ function renderCompanies() {
       <div class="shift-card">
         <strong>${escapeHtml(c.name)}</strong>
         ${isDefault ? `<span class="small" style="margin-left:8px;">(Default)</span>` : ""}
-        <div class="meta" style="margin-top:8px;">
+        <br>
+		<div class="meta" style="margin-top:8px;">
           Pay mode: ${escapeHtml(c.payMode || "weekly")}<br>
           Rate: £${Number(c.baseRate || 0).toFixed(2)}<br>
+		  ${c.baseDailyPaidHours ? `Base daily paid (salaried): ${Number(c.baseDailyPaidHours || 0).toFixed(2)} hrs<br>` : ""}
+		  ${c.standardShiftLength ? `Std shift length: ${Number(c.standardShiftLength || 0).toFixed(2)} hrs<br>` : ""}
           Weekly base: ${Number(c.baseWeeklyHours || 0).toFixed(2)} hrs<br>
-          Daily OT after (worked): ${Number(c.dailyOTAfterWorkedHours || 0).toFixed(2)} hrs<br>
+          ${(c.payMode === "daily")
+		  ? `Daily OT after (worked): ${Number(c.dailyOTAfterWorkedHours || 0).toFixed(2)} hrs<br>` : ``}
           Min paid shift: ${Number(c.minPaidShiftHours || 0).toFixed(2)} hrs<br>
           OT: Wkday x${Number(c.ot?.weekday || 1).toFixed(2)} • Sat x${Number(c.ot?.saturday || 1).toFixed(2)} • Sun x${Number(c.ot?.sunday || 1).toFixed(2)} • BH x${Number(c.ot?.bankHoliday || 1).toFixed(2)}<br>
           ${escapeHtml(nbText)}<br>
@@ -237,9 +241,11 @@ function addOrUpdateCompany() {
     baseRate,
 
     payMode: document.getElementById("payMode")?.value || "weekly",
-    baseWeeklyHours: Number(document.getElementById("baseWeeklyHours")?.value) || 0,
-    dailyOTAfterWorkedHours: Number(document.getElementById("dailyOTAfterWorkedHours")?.value) || 0,
-    minPaidShiftHours: Number(document.getElementById("minPaidShiftHours")?.value) || 0,
+	baseWeeklyHours: Number(document.getElementById("baseWeeklyHours")?.value) || 0,
+	baseDailyPaidHours: Number(document.getElementById("baseDailyPaidHours")?.value) || 0,
+	standardShiftLength: Number(document.getElementById("standardShiftLength")?.value) || 0,
+	dailyOTAfterWorkedHours: Number(document.getElementById("dailyOTAfterWorkedHours")?.value) || 0,
+	minPaidShiftHours: Number(document.getElementById("minPaidShiftHours")?.value) || 0,
 
     ot: {
       weekday: Number(document.getElementById("otWeekday")?.value) || 1,
@@ -288,6 +294,8 @@ function editCompany(id) {
 
   document.getElementById("payMode").value = c.payMode ?? "weekly";
   document.getElementById("baseWeeklyHours").value = c.baseWeeklyHours ?? "";
+  document.getElementById("baseDailyPaidHours").value = c.baseDailyPaidHours ?? "";
+  document.getElementById("standardShiftLength").value = c.standardShiftLength ?? "";
   document.getElementById("dailyOTAfterWorkedHours").value = c.dailyOTAfterWorkedHours ?? "";
   document.getElementById("minPaidShiftHours").value = c.minPaidShiftHours ?? "";
 
@@ -359,6 +367,8 @@ function resetCompanyForm() {
   if (document.getElementById("baseWeeklyHours")) document.getElementById("baseWeeklyHours").value = settings.baseHours ?? 45;
   if (document.getElementById("dailyOTAfterWorkedHours")) document.getElementById("dailyOTAfterWorkedHours").value = 0;
   if (document.getElementById("minPaidShiftHours")) document.getElementById("minPaidShiftHours").value = 0;
+  if (document.getElementById("baseDailyPaidHours")) document.getElementById("baseDailyPaidHours").value = 0;
+  if (document.getElementById("standardShiftLength")) document.getElementById("standardShiftLength").value = 0;
 
   if (document.getElementById("otWeekday")) document.getElementById("otWeekday").value = settings.otWeekday ?? 1.25;
   if (document.getElementById("otSaturday")) document.getElementById("otSaturday").value = settings.otSaturday ?? 1.25;
