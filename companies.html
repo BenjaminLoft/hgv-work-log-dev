@@ -43,6 +43,34 @@
 	<label>Minimum paid shift hours (optional)</label>
 	<input type="number" step="0.25" id="minPaidShiftHours" placeholder="e.g. 8">
 
+	<h3>Night Bonus</h3>
+
+	<label>Night Bonus Type</label>
+	<select id="nightBonusMode">
+	  <option value="none">None</option>
+	  <option value="per_hour">Per hour (within window)</option>
+	  <option value="per_shift">Per shift (if any time in window)</option>
+	  <option value="per_week">Per week (once per week if any time in window)</option>
+	</select>
+
+	<label>Night Bonus Amount (£)</label>
+	<input type="number" step="0.01" id="nightBonusAmount" placeholder="0.50">
+
+	<div class="grid">
+	  <div>
+		<label>Window Start</label>
+		<input type="time" id="nightBonusStart" value="22:00">
+	  </div>
+	  <div>
+		<label>Window End</label>
+		<input type="time" id="nightBonusEnd" value="06:00">
+	  </div>
+	</div>
+
+	<div class="small" style="margin-top:8px;">
+	  Tip: For “per shift”/“per week”, the window still decides whether a shift qualifies.
+	</div>
+
     <h2>Overtime Multipliers</h2>
 
     <label>Mon–Fri</label>

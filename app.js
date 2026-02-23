@@ -47,6 +47,12 @@ function ensureDefaultCompany() {
 	dailyOTAfterWorkedHours: 0,
 	minPaidShiftHours: 0,
     baseRate: settings.baseRate ?? 17.75,
+	nightBonus: {
+      mode: "none",       // "none" | "per_hour" | "per_shift" | "per_week"
+      amount: 0.50,
+      start: "22:00",
+      end: "06:00"
+    },
     ot: {
       weekday: settings.otWeekday ?? 1.25,
       saturday: settings.otSaturday ?? 1.25,
@@ -162,6 +168,12 @@ function addOrUpdateCompany() {
       sunday: parseFloat(document.getElementById("otSunday")?.value) || 1,
       bankHoliday: parseFloat(document.getElementById("otBankHoliday")?.value) || 1
     },
+	nightBonus: {
+		mode: document.getElementById("nightBonusMode")?.value || "none",
+		amount: parseFloat(document.getElementById("nightBonusAmount")?.value) || 0,
+		start: document.getElementById("nightBonusStart")?.value || "22:00",
+		end: document.getElementById("nightBonusEnd")?.value || "06:00"
+	},
     baseWeeklyHours: parseFloat(document.getElementById("baseWeeklyHours")?.value) || 0,
     baseDailyPaidHours: parseFloat(document.getElementById("baseDailyPaidHours")?.value) || 0,
     standardShiftLength: parseFloat(document.getElementById("standardShiftLength")?.value) || 0,
@@ -203,7 +215,12 @@ function editCompany(id) {
   document.getElementById("companyId").value = c.id;
   document.getElementById("companyName").value = c.name;
   document.getElementById("companyBaseRate").value = c.baseRate ?? "";
-
+  
+  document.getElementById("nightBonusMode").value = c.nightBonus?.mode ?? "none";
+  document.getElementById("nightBonusAmount").value = c.nightBonus?.amount ?? 0;
+  document.getElementById("nightBonusStart").value = c.nightBonus?.start ?? "22:00";
+  document.getElementById("nightBonusEnd").value = c.nightBonus?.end ?? "06:00";
+  
   document.getElementById("otWeekday").value = c.ot?.weekday ?? "";
   document.getElementById("otSaturday").value = c.ot?.saturday ?? "";
   document.getElementById("otSunday").value = c.ot?.sunday ?? "";
@@ -290,9 +307,13 @@ function resetCompanyForm() {
   if (document.getElementById("otSunday")) document.getElementById("otSunday").value = settings.otSunday ?? 1.5;
   if (document.getElementById("otBankHoliday")) document.getElementById("otBankHoliday").value = settings.otBankHoliday ?? 2;
   if (document.getElementById("baseWeeklyHours")) document.getElementById("baseWeeklyHours").value = settings.baseHours ?? 45;
-  document.getElementById("payMode").value = c.payMode ?? "weekly";
-  document.getElementById("dailyOTAfterWorkedHours").value = c.dailyOTAfterWorkedHours ?? "";
-  document.getElementById("minPaidShiftHours").value = c.minPaidShiftHours ?? "";
+  if (document.getElementById("nightBonusMode")) document.getElementById("nightBonusMode").value = "none";
+  if (document.getElementById("nightBonusAmount")) document.getElementById("nightBonusAmount").value = 0.5;
+  if (document.getElementById("nightBonusStart")) document.getElementById("nightBonusStart").value = "22:00";
+  if (document.getElementById("nightBonusEnd")) document.getElementById("nightBonusEnd").value = "06:00";
+  if (document.getElementById("payMode")) document.getElementById("payMode").value = "weekly";
+  if (document.getElementById("dailyOTAfterWorkedHours")) document.getElementById("dailyOTAfterWorkedHours").value = 0;
+  if (document.getElementById("minPaidShiftHours")) document.getElementById("minPaidShiftHours").value = 0;
 }
 
 /* Helpers */
@@ -315,6 +336,88 @@ function escapeHtml(str) {
 
 function clamp0(n){ n = Number(n || 0); return Number.isFinite(n) ? Math.max(0, n) : 0; }
 
+function timeToMinutes(t){
+    // "HH:MM" -> minutes
+	if(!t) return 0;
+		const [hh, mm] = String(t).split(":").map(Number);
+	  return (hh * 60) + (mm || 0);
+	}
+
+	function overlapMinutes(aStart, aEnd, bStart, bEnd){
+	  const start = Math.max(aStart, bStart);
+	  const end = Math.min(aEnd, bEnd);
+	  return Math.max(0, end - start);
+	}
+
+	function calcNightHoursForShift(start, finish, winStart, winEnd, isAnnualLeave){
+		if(isAnnualLeave) return 0;
+		if(!start || !finish) return 0;
+
+		let s = timeToMinutes(start);
+		let f = timeToMinutes(finish);
+
+		// shift over midnight
+		if(f <= s) f += 1440;
+
+		const ws = timeToMinutes(winStart);
+		const we = timeToMinutes(winEnd);
+
+		// window intervals can cross midnight (e.g. 22:00 -> 06:00)
+		const windows = [];
+		if(we > ws){
+			// simple window
+			windows.push([ws, we]);
+			windows.push([ws + 1440, we + 1440]); // next day mirror
+		}else{
+			// crosses midnight: [ws, 1440) and [0, we]
+			windows.push([ws, 1440]);
+			windows.push([0, we]);
+			// next day mirrors
+			windows.push([ws + 1440, 1440 + 1440]);
+			windows.push([0 + 1440, we + 1440]);
+		}
+
+	let minutes = 0;
+	for(const [a, b] of windows){
+		minutes += overlapMinutes(s, f, a, b);
+	}
+
+	return minutes / 60;
+}
+  
+function applyNightBonusForShift(shift, nightWeeklyPaidSet){
+  const c = getCompanyById(shift.companyId);
+  const nb = c?.nightBonus || { mode:"none", amount:0, start:"22:00", end:"06:00" };
+
+  const amount = Number(nb.amount || 0);
+  if(!amount || nb.mode === "none") return { nightHours: 0, nightPay: 0 };
+
+  const nightHours = calcNightHoursForShift(
+    shift.start,
+    shift.finish,
+    nb.start || "22:00",
+    nb.end || "06:00",
+    !!shift.annualLeave
+  );
+
+  let nightPay = 0;
+
+  if(nb.mode === "per_hour"){
+    nightPay = nightHours * amount;
+  } else if(nb.mode === "per_shift"){
+    if(nightHours > 0) nightPay = amount;
+  } else if(nb.mode === "per_week"){
+    if(nightHours > 0){
+      const key = String(shift.companyId || "");
+      if(key && nightWeeklyPaidSet && !nightWeeklyPaidSet.has(key)){
+        nightWeeklyPaidSet.add(key);
+        nightPay = amount;
+      }
+    }
+  }
+
+  return { nightHours, nightPay };
+}
 function applyCompanyPaidRules(shift) {
   // Uses: shift.worked, shift.breaks, shift.paid
   const c = getCompanyById(shift.companyId);
@@ -362,11 +465,11 @@ function splitPaidIntoBaseAndOT_DailyWorked(shift) {
   // Convert OT worked hours into OT paid hours (1 break hour should not “become OT”)
   // Simplest defensible mapping: OT paid hours cannot exceed paid hours, and is at most otWorked.
   const otPaid = Math.min(paid, otWorked);
-
   return {
     baseHours: Math.max(0, paid - otPaid),
     otHours: otPaid
   };
+  
 }
 
 function renderCompanyDropdowns(selectedId = "") {
@@ -640,6 +743,7 @@ function sumResults(a, b){
     basePay: (a.basePay||0) + (b.basePay||0),
     otPay: (a.otPay||0) + (b.otPay||0),
     total: (a.total||0) + (b.total||0),
+	Night: ${(r.nightHours || 0).toFixed(2)} hrs • Bonus: £${(r.nightPay || 0).toFixed(2)}<br>
   };
 }
 
@@ -712,6 +816,11 @@ function processShifts(group, mode = "overall") {
   // totals
   let totalWorked = 0, totalBreaks = 0, totalPaid = 0;
   let totalOTHours = 0, basePay = 0, otPay = 0;
+  let nightHoursTotal = 0;
+  let nightPayTotal = 0;
+
+  // for per_week bonuses (once per company in this group)
+  const nightWeeklyPaid = new Set();
 
   // normalize stored shifts (in case old ones don’t have baseHours/otHours)
   arr.forEach(s => {
@@ -763,7 +872,12 @@ function processShifts(group, mode = "overall") {
     const profile = getShiftRateProfile(s);
     const mult = getShiftOTMultiplier(s, profile);
     const payMode = getCompanyPayMode(s.companyId);
-
+	
+	// Night bonus (per-hour/per-shift/per-week)
+    const nbRes = applyNightBonusForShift(s, nightWeeklyPaid);
+	nightHoursTotal += nbRes.nightHours;
+	nightPayTotal += nbRes.nightPay;
+	
     if (s.bankHoliday) {
       const paid = Number(s.paid || 0);
       otPay += paid * profile.baseRate * mult;
@@ -788,8 +902,36 @@ function processShifts(group, mode = "overall") {
       // weekly mode: defer OT decision
       weeklyCandidates.push(s);
     }
+	
   });
+ 
+  const nb = company?.nightBonus || { mode: "none", amount: 0, start: "22:00", end: "06:00" };
 
+  const nh = calcNightHoursForShift(
+    s.start,
+    s.finish,
+    nb.start || "22:00",
+    nb.end || "06:00",
+    !!s.annualLeave
+  );
+
+  nightHoursTotal += nh;
+
+  if(nb.mode === "per_hour"){
+    nightPayTotal += nh * (Number(nb.amount) || 0);
+  }
+  else if(nb.mode === "per_shift"){
+    if(nh > 0) nightPayTotal += (Number(nb.amount) || 0);
+  }
+  else if(nb.mode === "per_week"){
+    if(nh > 0){
+      const key = String(s.companyId || "");
+      if(key && !nightWeeklyPaid.has(key)){
+        nightWeeklyPaid.add(key);
+        nightPayTotal += (Number(nb.amount) || 0);
+      }
+    }
+  }
   // Now allocate weekly overtime for weekly-mode companies
   if (weeklyCandidates.length) {
     if (mode === "perCompany") {
@@ -847,7 +989,17 @@ function processShifts(group, mode = "overall") {
     }
   }
 
-  return { worked: totalWorked, breaks: totalBreaks, paid: totalPaid, otHours: totalOTHours, basePay, otPay, total: basePay + otPay };
+  return {
+	worked: totalWorked,
+	breaks: totalBreaks,
+	paid: totalPaid,
+	otHours: totalOTHours,
+	basePay,
+	otPay,
+	nightHours: nightHoursTotal,
+	nightPay: nightPayTotal,
+	total: basePay + otPay + nightPayTotal
+  };
 }
 
 /* ===============================
