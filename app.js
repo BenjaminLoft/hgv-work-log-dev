@@ -600,13 +600,31 @@ function addOrUpdateShift() {
 }
 
 function clearForm() {
+  // Clear inputs/textareas but leave file inputs alone (none on index anyway)
   document.querySelectorAll("input, textarea").forEach(el => {
     if (el.type === "checkbox") el.checked = false;
-    else el.value = "";
+    else if (el.type !== "file") el.value = "";
   });
 
+  // Reset dropdowns
   const vehicle = document.getElementById("vehicle");
   if (vehicle) vehicle.value = "";
+
+  // Keep company selected (nice UX) – comment this out if you want it blank
+  const company = document.getElementById("company");
+  if (company && company.value) {
+    // keep as-is
+  } else {
+    renderCompanyDropdowns(); // repop + pick default if needed
+  }
+
+  // ✅ Re-apply default start time after reset
+  applyDefaultsToShiftEntry();
+  
+  const dateEl = document.getElementById("date");
+  if (dateEl && !dateEl.value) {
+    dateEl.value = new Date().toISOString().slice(0,10);
+  }
 }
 
 /* ===============================
@@ -1638,13 +1656,31 @@ function startEditShift(index) {
   window.location.href = "index.html";
 }
 
-function applyDefaultsToShiftEntry() {
+function applyDefaultsToShiftEntry({ force = false } = {}) {
+  // Only relevant on the shift entry page
   const startEl = document.getElementById("start");
-  if (!startEl) return; // not on index page
+  if (!startEl) return;
 
-  // Only set default if the field is empty (don't overwrite user input or edits)
-  if (!startEl.value && settings.defaultStart) {
+  // If we're editing an existing shift, don't auto-fill anything
+  // (unless explicitly forced)
+  if (!force && editingIndex !== null) return;
+
+  // Default start time
+  if ((force || !startEl.value) && settings?.defaultStart) {
     startEl.value = settings.defaultStart;
+  }
+
+  // Optional: set today's date if empty (nice UX)
+  const dateEl = document.getElementById("date");
+  if (dateEl && (force || !dateEl.value)) {
+    dateEl.value = new Date().toISOString().slice(0, 10);
+  }
+
+  // Optional: ensure company dropdown has a sensible default selected
+  // (won't override if user already picked one)
+  const companyEl = document.getElementById("company");
+  if (companyEl && (force || !companyEl.value)) {
+    renderCompanyDropdowns(); // picks stored default / first available
   }
 }
 /* ===============================
