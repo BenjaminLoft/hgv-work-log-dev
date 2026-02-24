@@ -1780,64 +1780,35 @@ document.addEventListener("DOMContentLoaded", () => {
 });
 
 /* ===============================
-   PWA: SERVICE WORKER + UPDATE BANNER
+   PWA: SERVICE WORKER + UPDATES
 ================================ */
 
-function showUpdateBanner(reg) {
-  // Avoid duplicates
-  if (document.getElementById("updateBanner")) return;
-
-  const banner = document.createElement("div");
-  banner.id = "updateBanner";
-  banner.innerHTML = `
-    <div class="update-banner">
-      <div>
-        <strong>Update available</strong>
-        <div class="small">Refresh to load the latest version.</div>
-      </div>
-      <div class="update-actions">
-        <button class="button-secondary" id="updateLaterBtn" style="width:auto;">Later</button>
-        <button id="updateNowBtn" style="width:auto;">Refresh</button>
-      </div>
-    </div>
-  `;
-
-  document.body.appendChild(banner);
-
-  document.getElementById("updateLaterBtn")?.addEventListener("click", () => {
-    banner.remove();
-  });
-
-  document.getElementById("updateNowBtn")?.addEventListener("click", () => {
-    // Tell the waiting SW to activate now
-    if (reg && reg.waiting) {
-      reg.waiting.postMessage({ type: "SKIP_WAITING" });
-    }
-  });
-}
+let __swRegistration = null;
 
 if ("serviceWorker" in navigator) {
   window.addEventListener("load", async () => {
     try {
       const reg = await navigator.serviceWorker.register("./service-worker.js");
 
-      // If there's already a waiting worker, show banner immediately
+      // ✅ Store registration globally
+      __swRegistration = reg;
+
+      // If update already waiting
       if (reg.waiting) showUpdateBanner(reg);
 
-      // When a new SW is found, watch its state
+      // Detect new updates
       reg.addEventListener("updatefound", () => {
         const newWorker = reg.installing;
         if (!newWorker) return;
 
         newWorker.addEventListener("statechange", () => {
-          // When installed, if we already have a controller, it's an update
           if (newWorker.state === "installed" && navigator.serviceWorker.controller) {
             showUpdateBanner(reg);
           }
         });
       });
 
-      // When the SW takes control, reload once to get the new assets
+      // Reload once new SW takes control
       let refreshing = false;
       navigator.serviceWorker.addEventListener("controllerchange", () => {
         if (refreshing) return;
@@ -1849,4 +1820,39 @@ if ("serviceWorker" in navigator) {
       console.error("Service worker registration failed:", err);
     }
   });
+}
+
+function setUpdateStatus(msg) {
+  const el = document.getElementById("updateStatus");
+  if (el) el.textContent = msg;
+}
+
+async function checkForUpdates() {
+  if (!("serviceWorker" in navigator)) {
+    alert("Service workers not supported.");
+    return;
+  }
+
+  const reg = __swRegistration || await navigator.serviceWorker.getRegistration();
+
+  if (!reg) {
+    alert("No service worker registered yet.");
+    return;
+  }
+
+  setUpdateStatus("Checking for updates...");
+
+  if (reg.waiting) {
+    setUpdateStatus("Update available.");
+    showUpdateBanner(reg);
+    return;
+  }
+
+  await reg.update();
+
+  setTimeout(() => {
+    if (!reg.waiting) {
+      setUpdateStatus("You're up to date.");
+    }
+  }, 2000);
 }
