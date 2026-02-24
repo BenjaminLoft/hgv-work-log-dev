@@ -284,7 +284,14 @@ function addOrUpdateCompany() {
   renderCompanyDropdowns();
 }
 
+function openCompanyForm() {
+  const wrap = document.getElementById("companyFormWrap");
+  if (wrap) wrap.style.display = "block";
+}
+
 function editCompany(id) {
+  openCompanyForm();
+	
   const c = getCompanyById(id);
   if (!c) return;
 
