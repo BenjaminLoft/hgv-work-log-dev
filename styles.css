@@ -293,6 +293,35 @@ button:active{ transform: scale(0.99); }
   grid-template-columns: 1fr 1fr;
   gap: 12px;
 }
+
+/* Buttons side-by-side where it makes sense */
+.button-row{
+  display:flex;
+  gap:10px;
+  flex-wrap:wrap;
+  margin-top: 12px;
+}
+.button-row button{
+  flex: 1;
+  min-width: 180px;
+}
+
+/* Make details look like part of the UI, not raw HTML */
+.details{
+  border: 1px solid rgba(255,255,255,0.08);
+  border-radius: var(--radius);
+  padding: 12px 14px;
+  background: rgba(0,0,0,0.12);
+}
+.details > summary{
+  cursor:pointer;
+  font-weight: 800;
+  color: var(--text);
+}
+.details[open] > summary{
+  margin-bottom: 10px;
+}
+
 /* Keep summary tiles in 2 columns on phones */
 @media (max-width: 520px){
   .grid{
