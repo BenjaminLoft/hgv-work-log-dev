@@ -288,31 +288,55 @@ function editCompany(id) {
   const c = getCompanyById(id);
   if (!c) return;
 
-  document.getElementById("companyId").value = c.id;
-  document.getElementById("companyName").value = c.name ?? "";
-  document.getElementById("companyBaseRate").value = c.baseRate ?? "";
+  const setVal = (elId, val) => {
+    const el = document.getElementById(elId);
+    if (!el) return;
+    el.value = (val ?? "");
+  };
 
-  document.getElementById("payMode").value = c.payMode ?? "weekly";
-  document.getElementById("baseWeeklyHours").value = c.baseWeeklyHours ?? "";
-  document.getElementById("baseDailyPaidHours").value = c.baseDailyPaidHours ?? "";
-  document.getElementById("standardShiftLength").value = c.standardShiftLength ?? "";
-  document.getElementById("dailyOTAfterWorkedHours").value = c.dailyOTAfterWorkedHours ?? "";
-  document.getElementById("minPaidShiftHours").value = c.minPaidShiftHours ?? "";
+  setVal("companyId", c.id);
+  setVal("companyName", c.name);
+  setVal("companyBaseRate", c.baseRate);
 
-  document.getElementById("otWeekday").value = c.ot?.weekday ?? "";
-  document.getElementById("otSaturday").value = c.ot?.saturday ?? "";
-  document.getElementById("otSunday").value = c.ot?.sunday ?? "";
-  document.getElementById("otBankHoliday").value = c.ot?.bankHoliday ?? "";
+  // Pay mode first (so UI can react)
+  setVal("payMode", c.payMode || "weekly");
 
-  document.getElementById("nightBonusMode").value = c.nightBonus?.mode ?? "none";
-  document.getElementById("nightBonusAmount").value = c.nightBonus?.amount ?? 0;
-  document.getElementById("nightBonusStart").value = c.nightBonus?.start ?? "22:00";
-  document.getElementById("nightBonusEnd").value = c.nightBonus?.end ?? "06:00";
+  // If you have UI logic to show/hide daily OT + night bonus fields, call it here
+  if (typeof updateCompanyFormVisibility === "function") {
+    updateCompanyFormVisibility();
+  } else {
+    // Minimal fallback: show daily OT input only when daily mode
+    const dailyWrap = document.getElementById("dailyOTAfterWorkedHours")?.closest(".field") || null;
+    if (dailyWrap) dailyWrap.style.display = (c.payMode === "daily") ? "" : "none";
+  }
 
-  document.getElementById("contactName").value = c.contactName ?? "";
-  document.getElementById("contactNumber").value = c.contactNumber ?? "";
-  
-  updateCompanyFormVisibility();
+  setVal("dailyOTAfterWorkedHours", c.dailyOTAfterWorkedHours);
+  setVal("minPaidShiftHours", c.minPaidShiftHours);
+
+  // Night bonus
+  const nb = c.nightBonus || {};
+  setVal("nightBonusMode", nb.mode || "none");
+  setVal("nightBonusAmount", nb.amount ?? 0);
+  setVal("nightBonusStart", nb.start || "22:00");
+  setVal("nightBonusEnd", nb.end || "06:00");
+
+  // OT multipliers
+  setVal("otWeekday", c.ot?.weekday);
+  setVal("otSaturday", c.ot?.saturday);
+  setVal("otSunday", c.ot?.sunday);
+  setVal("otBankHoliday", c.ot?.bankHoliday);
+
+  // Hours rules
+  setVal("baseWeeklyHours", c.baseWeeklyHours);
+  setVal("baseDailyPaidHours", c.baseDailyPaidHours);
+  setVal("standardShiftLength", c.standardShiftLength);
+
+  // Contact
+  setVal("contactName", c.contactName);
+  setVal("contactNumber", c.contactNumber);
+
+  // If your companies page uses a collapsible form, open it automatically when editing
+  if (typeof openCompanyForm === "function") openCompanyForm();
 }
 
 function deleteCompany(id) {
