@@ -4,18 +4,11 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Companies</title>
   <link rel="stylesheet" href="styles.css">
-  <link rel="manifest" href="manifest.json">
-  <meta name="theme-color" content="#0b1220">
-  <meta name="apple-mobile-web-app-capable" content="yes">
-  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-  <meta name="apple-mobile-web-app-title" content="Work Log">
-  <link rel="apple-touch-icon" href="icons/icon-192.png">
 </head>
 <body>
 
 <nav class="nav">
-  <a href="index.html">Home</a>
-  <a href="enter-shift.html">Enter Shift</a>
+  <a href="index.html">Enter Shift</a>
   <a href="summary.html">Summary</a>
   <a href="shifts.html">All Shifts</a>
   <a href="companies.html">Companies</a>
@@ -27,12 +20,13 @@
   <div class="screen">
     <h1>Companies</h1>
 
-    <button id="toggleCompanyFormBtn" class="button-secondary" type="button">
-      + Add / Edit Company
+    <!-- Toggle button -->
+    <button class="button-secondary" type="button" id="toggleCompanyFormBtn">
+      Add / Edit Company
     </button>
 
+    <!-- Form wrapper (collapsed by default) -->
     <div id="companyFormWrap" style="display:none; margin-top:14px;">
-      <h2 style="margin-top:0;">Company Details</h2>
 
       <input type="hidden" id="companyId">
 
@@ -48,6 +42,15 @@
         <option value="daily">Daily overtime (after X hours worked)</option>
       </select>
 
+      <!-- Only relevant for daily mode -->
+      <div id="dailyOtFields" style="display:none;">
+        <label>Daily OT after worked hours</label>
+        <input type="number" step="0.25" id="dailyOTAfterWorkedHours" placeholder="e.g. 10">
+        <div class="small" style="margin-top:6px;">
+          Example: 10 means any time worked beyond 10.00 hrs is overtime (break doesn’t count).
+        </div>
+      </div>
+
       <label>Minimum paid shift hours (optional)</label>
       <input type="number" step="0.25" id="minPaidShiftHours" placeholder="e.g. 8">
 
@@ -61,43 +64,22 @@
         <option value="per_week">Per week (once per week if any time in window)</option>
       </select>
 
-      <!-- Hide/show this block based on payMode -->
-      <div id="nightBonusWindow">
-		<div class="grid">
-		  <div>
-			<label>Window Start</label>
-			<input type="time" id="nightBonusStart" value="22:00">
-		  </div>
-		  <div>
-			<label>Window End</label>
-			<input type="time" id="nightBonusEnd" value="06:00">
-		  </div>
-	    </div>
-
-		<div class="small" style="margin-top:8px;">
-			Tip: For “per shift”/“per week”, the window still decides whether a shift qualifies.
-		</div>
-	  </div>
-
       <label>Night Bonus Amount (£)</label>
       <input type="number" step="0.01" id="nightBonusAmount" placeholder="0.50">
 
-      <!-- Hide/show window fields based on nightBonusMode -->
-      <div id="nightWindowWrap">
-        <div class="grid">
-          <div>
-            <label>Window Start</label>
-            <input type="time" id="nightBonusStart" value="22:00">
-          </div>
-          <div>
-            <label>Window End</label>
-            <input type="time" id="nightBonusEnd" value="06:00">
-          </div>
+      <div class="grid">
+        <div>
+          <label>Window Start</label>
+          <input type="time" id="nightBonusStart" value="22:00">
         </div>
+        <div>
+          <label>Window End</label>
+          <input type="time" id="nightBonusEnd" value="06:00">
+        </div>
+      </div>
 
-        <div class="small" style="margin-top:8px;">
-          Tip: For “per shift”/“per week”, the window decides whether a shift qualifies.
-        </div>
+      <div class="small" style="margin-top:8px;">
+        Tip: For “per shift”/“per week”, the window decides whether a shift qualifies.
       </div>
 
       <h2>Overtime Multipliers</h2>
@@ -133,14 +115,8 @@
       <label>Contact Number</label>
       <input type="tel" id="contactNumber" placeholder="e.g. 07...">
 
-      <div style="display:flex; gap:10px; margin-top:14px; flex-wrap:wrap;">
-        <button type="button" onclick="addOrUpdateCompany()" style="flex:1;">Save Company</button>
-        <button type="button" class="button-secondary" onclick="resetCompanyForm()" style="flex:1;">Clear</button>
-      </div>
-
-      <div class="small" style="margin-top:10px;">
-        When editing, the form stays open so you can save changes.
-      </div>
+      <button type="button" onclick="addOrUpdateCompany()">Save Company</button>
+      <button type="button" class="button-secondary" onclick="resetCompanyForm()">Clear</button>
     </div>
 
     <h2 style="margin-top:18px;">Company List</h2>
@@ -150,78 +126,23 @@
 
 <script src="app.js"></script>
 <script>
-  (function () {
-    const btn = document.getElementById("toggleCompanyFormBtn");
-    const wrap = document.getElementById("companyFormWrap");
+  // Toggle form open/close
+  const btn = document.getElementById("toggleCompanyFormBtn");
+  const wrap = document.getElementById("companyFormWrap");
+  btn.addEventListener("click", () => {
+    wrap.style.display = (wrap.style.display === "none") ? "block" : "none";
+  });
 
-    const payModeEl = document.getElementById("payMode");
-    const dailyOtWrap = document.getElementById("dailyOtWrap");
+  // Show/hide daily OT fields based on payMode
+  const payModeEl = document.getElementById("payMode");
+  const dailyWrap = document.getElementById("dailyOtFields");
 
-    const nbModeEl = document.getElementById("nightBonusMode");
-    const nightWindowWrap = document.getElementById("nightWindowWrap");
+  function syncDailyFields(){
+    dailyWrap.style.display = (payModeEl.value === "daily") ? "block" : "none";
+  }
 
-    function setBtnLabel() {
-      const isOpen = wrap.style.display !== "none";
-      btn.textContent = isOpen ? "– Hide Company Form" : "+ Add / Edit Company";
-    }
-
-    function openForm() {
-      wrap.style.display = "block";
-      setBtnLabel();
-      updateVisibility();
-      wrap.scrollIntoView({ behavior: "smooth", block: "start" });
-    }
-
-    function toggle() {
-      wrap.style.display = (wrap.style.display === "none") ? "block" : "none";
-      setBtnLabel();
-      if (wrap.style.display !== "none") {
-        updateVisibility();
-        wrap.scrollIntoView({ behavior: "smooth", block: "start" });
-      }
-    }
-
-    function updateVisibility() {
-      // Pay mode → show daily OT threshold only when daily
-      const payMode = (payModeEl?.value || "weekly").toLowerCase();
-      if (dailyOtWrap) dailyOtWrap.style.display = (payMode === "daily") ? "block" : "none";
-
-      // Night bonus mode → show window inputs only when not none
-      const nbMode = (nbModeEl?.value || "none").toLowerCase();
-      if (nightWindowWrap) nightWindowWrap.style.display = (nbMode !== "none") ? "block" : "none";
-    }
-
-    // Start closed
-    wrap.style.display = "none";
-    setBtnLabel();
-    updateVisibility();
-
-    btn.addEventListener("click", toggle);
-    payModeEl?.addEventListener("change", updateVisibility);
-    nbModeEl?.addEventListener("change", updateVisibility);
-
-    // Auto-open form when editing a company
-    const origEdit = window.editCompany;
-    if (typeof origEdit === "function") {
-      window.editCompany = function(id) {
-        origEdit(id);
-        openForm();
-      };
-    }
-
-    // Also: if your app.js resetCompanyForm sets defaults, reflect visibility after reset
-    const origReset = window.resetCompanyForm;
-    if (typeof origReset === "function") {
-      window.resetCompanyForm = function() {
-        origReset();
-        updateVisibility();
-      };
-    }
-
-    // If user lands on the page and the form is already open for some reason, keep visibility correct
-    document.addEventListener("DOMContentLoaded", updateVisibility);
-  })();
+  payModeEl.addEventListener("change", syncDailyFields);
+  syncDailyFields();
 </script>
-
 </body>
 </html>
