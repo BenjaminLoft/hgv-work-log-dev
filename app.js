@@ -531,21 +531,52 @@ function applyCompanyPaidRules(shift) {
 
 function splitPaidIntoBaseAndOT_DailyWorked(shift) {
   const c = getCompanyById(shift.companyId);
-  const payMode = shift.overrides?.payMode ?? c?.payMode ?? "weekly";
-  const thresholdWorked = clamp0(shift.overrides?.dailyOTAfterWorkedHours ?? c?.dailyOTAfterWorkedHours ?? 0);
 
-  const paid = clamp0(shift.paid);
-  const worked = clamp0(shift.worked);
+  const payMode = shift?.overrides?.payMode ?? c?.payMode ?? "weekly";
 
-  if (shift.bankHoliday) return { baseHours: 0, otHours: paid };
-  if (shift.annualLeave) return { baseHours: paid, otHours: 0 };
+  // The user/shift/company may not have set this. We'll fall back sensibly.
+  let thresholdWorked = clamp0(
+    shift?.overrides?.dailyOTAfterWorkedHours ??
+    c?.dailyOTAfterWorkedHours ??
+    0
+  );
 
-  if (payMode !== "daily" || thresholdWorked <= 0) {
+  const paid = clamp0(shift?.paid);
+  const worked = clamp0(shift?.worked);
+
+  // Bank holiday: treat whole paid shift as OT hours for reporting/pricing
+  if (shift?.bankHoliday) {
+    return { baseHours: 0, otHours: paid };
+  }
+
+  // Annual leave: treat as base hours
+  if (shift?.annualLeave) {
     return { baseHours: paid, otHours: 0 };
   }
 
-  // OT based on worked hours, but paid excludes breaks.
+  // Only daily mode uses daily OT threshold
+  if (payMode !== "daily") {
+    return { baseHours: paid, otHours: 0 };
+  }
+
+  // ✅ Fix: if daily mode is selected but threshold is missing/0,
+  // fall back to a sensible default:
+  // company standardShiftLength -> 10 hours
+  if (thresholdWorked <= 0) {
+    thresholdWorked = clamp0(c?.standardShiftLength ?? 10);
+  }
+
+  // If still 0 for any reason, treat as no daily OT rule
+  if (thresholdWorked <= 0) {
+    return { baseHours: paid, otHours: 0 };
+  }
+
+  // Overtime is based on WORKED hours, but paid hours are worked-break.
+  // OT worked hours:
   const otWorked = Math.max(0, worked - thresholdWorked);
+
+  // Map OT worked -> OT paid:
+  // OT paid cannot exceed paid hours, and is capped by otWorked
   const otPaid = Math.min(paid, otWorked);
 
   return {
@@ -1747,3 +1778,75 @@ document.addEventListener("DOMContentLoaded", () => {
   // Companies page
   updateCompanyFormVisibility();
 });
+
+/* ===============================
+   PWA: SERVICE WORKER + UPDATE BANNER
+================================ */
+
+function showUpdateBanner(reg) {
+  // Avoid duplicates
+  if (document.getElementById("updateBanner")) return;
+
+  const banner = document.createElement("div");
+  banner.id = "updateBanner";
+  banner.innerHTML = `
+    <div class="update-banner">
+      <div>
+        <strong>Update available</strong>
+        <div class="small">Refresh to load the latest version.</div>
+      </div>
+      <div class="update-actions">
+        <button class="button-secondary" id="updateLaterBtn" style="width:auto;">Later</button>
+        <button id="updateNowBtn" style="width:auto;">Refresh</button>
+      </div>
+    </div>
+  `;
+
+  document.body.appendChild(banner);
+
+  document.getElementById("updateLaterBtn")?.addEventListener("click", () => {
+    banner.remove();
+  });
+
+  document.getElementById("updateNowBtn")?.addEventListener("click", () => {
+    // Tell the waiting SW to activate now
+    if (reg && reg.waiting) {
+      reg.waiting.postMessage({ type: "SKIP_WAITING" });
+    }
+  });
+}
+
+if ("serviceWorker" in navigator) {
+  window.addEventListener("load", async () => {
+    try {
+      const reg = await navigator.serviceWorker.register("./service-worker.js");
+
+      // If there's already a waiting worker, show banner immediately
+      if (reg.waiting) showUpdateBanner(reg);
+
+      // When a new SW is found, watch its state
+      reg.addEventListener("updatefound", () => {
+        const newWorker = reg.installing;
+        if (!newWorker) return;
+
+        newWorker.addEventListener("statechange", () => {
+          // When installed, if we already have a controller, it's an update
+          if (newWorker.state === "installed" && navigator.serviceWorker.controller) {
+            showUpdateBanner(reg);
+          }
+        });
+      });
+
+      // When the SW takes control, reload once to get the new assets
+      let refreshing = false;
+      navigator.serviceWorker.addEventListener("controllerchange", () => {
+        if (refreshing) return;
+        refreshing = true;
+        window.location.reload();
+      });
+
+    } catch (err) {
+      console.error("Service worker registration failed:", err);
+    }
+  });
+}

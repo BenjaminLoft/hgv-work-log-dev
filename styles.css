@@ -338,3 +338,32 @@ input[type="file"]{
 }
 
 [hidden] { display: none !important; }
+
+/* PWA Update Banner */
+.update-banner{
+  position: fixed;
+  left: 12px;
+  right: 12px;
+  bottom: 12px;
+  z-index: 9999;
+
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap: 12px;
+
+  padding: 12px 14px;
+  border-radius: 16px;
+
+  background: rgba(0,0,0,0.65);
+  border: 1px solid rgba(255,255,255,0.14);
+  backdrop-filter: blur(10px);
+  box-shadow: 0 18px 45px rgba(0,0,0,0.45);
+  color: var(--text);
+}
+
+.update-actions{
+  display:flex;
+  gap:10px;
+  flex-wrap:wrap;
+}
