@@ -795,15 +795,16 @@ function processMonthAsWeeks(monthShifts, modeForWeek = "overall") {
  *  - "monthOverall": no weekly allocation (daily-mode still uses split; weekly-mode treated as base, BH as OT)
  */
 function processShifts(group, mode = "overall") {
-  const arr = Array.isArray(group) ? group.slice() : [];
+  const arr = Array.isArray(group) ? [...group] : [];
 
   let totalWorked = 0, totalBreaks = 0, totalPaid = 0;
   let totalOTHours = 0, basePay = 0, otPay = 0;
-  let nightHoursTotal = 0, nightPayTotal = 0;
 
+  let nightHoursTotal = 0;
+  let nightPayTotal = 0;
   const nightWeeklyPaid = new Set();
 
-  // normalise & totals
+  // Normalize + totals + ensure baseHours/otHours exist for daily-mode logic
   arr.forEach(s => {
     totalWorked += Number(s.worked || 0);
     totalBreaks += Number(s.breaks || 0);
@@ -816,10 +817,7 @@ function processShifts(group, mode = "overall") {
     }
   });
 
-  // predictable ordering
-  arr.sort((a, b) => (a.date || "").localeCompare(b.date || "") || (a.start || "").localeCompare(b.start || ""));
-
-  // MonthOverall: no weekly allocation
+  // Month mode = sum per-shift pricing (no weekly allocation across month)
   if (mode === "monthOverall") {
     arr.forEach(s => {
       const profile = getShiftRateProfile(s);
@@ -829,6 +827,9 @@ function processShifts(group, mode = "overall") {
         const paid = Number(s.paid || 0);
         otPay += paid * profile.baseRate * mult;
         totalOTHours += paid;
+      } else if (s.annualLeave) {
+        const paid = Number(s.paid || 0);
+        basePay += paid * profile.baseRate;
       } else {
         const baseH = Number(s.baseHours || 0);
         const otH = Number(s.otHours || 0);
@@ -836,75 +837,95 @@ function processShifts(group, mode = "overall") {
         otPay += otH * profile.baseRate * mult;
         totalOTHours += otH;
       }
-
-      // night bonus
-      const company = getCompanyById(s.companyId);
-      const nb = company?.nightBonus || { mode: "none", amount: 0, start: "22:00", end: "06:00" };
-      const nh = calcNightHoursForShift(s.start, s.finish, nb.start, nb.end, !!s.annualLeave);
-      nightHoursTotal += nh;
-
-      if (nb.mode === "per_hour") nightPayTotal += nh * Number(nb.amount || 0);
-      else if (nb.mode === "per_shift") { if (nh > 0) nightPayTotal += Number(nb.amount || 0); }
-      else if (nb.mode === "per_week") {
-        if (nh > 0 && s.companyId && !nightWeeklyPaid.has(s.companyId)) {
-          nightWeeklyPaid.add(s.companyId);
-          nightPayTotal += Number(nb.amount || 0);
-        }
-      }
     });
 
     return {
-      worked: totalWorked, breaks: totalBreaks, paid: totalPaid,
-      otHours: totalOTHours, basePay, otPay,
-      nightHours: nightHoursTotal, nightPay: nightPayTotal,
-      total: basePay + otPay + nightPayTotal
+      worked: totalWorked,
+      breaks: totalBreaks,
+      paid: totalPaid,
+      otHours: totalOTHours,
+      basePay,
+      otPay,
+      nightHours: 0,
+      nightPay: 0,
+      total: basePay + otPay
     };
   }
 
-  // first pass: daily-mode priced now, weekly-mode deferred
+  // Sort for predictable weekly allocation
+  arr.sort((a, b) => {
+    const ad = (a.date || "").localeCompare(b.date || "");
+    if (ad !== 0) return ad;
+    return (a.start || "").localeCompare(b.start || "");
+  });
+
   const weeklyCandidates = [];
 
+  // First pass: price daily-mode shifts immediately, queue weekly-mode shifts
   arr.forEach(s => {
     const profile = getShiftRateProfile(s);
     const mult = getShiftOTMultiplier(s, profile);
-    const payMode = getCompanyPayMode(s.companyId);
+    const company = getCompanyById(s.companyId);
+    const payMode = company?.payMode || "weekly";
 
-    // bank holiday always OT priced
+    // --- Night bonus calc (per shift, safe, inside loop)
+    const nb = company?.nightBonus || { mode: "none", amount: 0, start: "22:00", end: "06:00" };
+    if (typeof calcNightHoursForShift === "function") {
+      const nh = calcNightHoursForShift(
+        s.start,
+        s.finish,
+        nb.start || "22:00",
+        nb.end || "06:00",
+        !!s.annualLeave
+      );
+      nightHoursTotal += nh;
+
+      if (nb.mode === "per_hour") {
+        nightPayTotal += nh * (Number(nb.amount) || 0);
+      } else if (nb.mode === "per_shift") {
+        if (nh > 0) nightPayTotal += (Number(nb.amount) || 0);
+      } else if (nb.mode === "per_week") {
+        if (nh > 0) {
+          const key = String(s.companyId || "");
+          if (key && !nightWeeklyPaid.has(key)) {
+            nightWeeklyPaid.add(key);
+            nightPayTotal += (Number(nb.amount) || 0);
+          }
+        }
+      }
+    }
+
+    // --- Bank holiday: whole paid shift is OT
     if (s.bankHoliday) {
       const paid = Number(s.paid || 0);
       otPay += paid * profile.baseRate * mult;
       totalOTHours += paid;
-    } else if (s.annualLeave) {
+      return;
+    }
+
+    // --- Annual leave: base pay
+    if (s.annualLeave) {
       const paid = Number(s.paid || 0);
       basePay += paid * profile.baseRate;
-    } else if (payMode === "daily") {
+      return;
+    }
+
+    // --- Daily OT mode: use baseHours/otHours split
+    if (payMode === "daily") {
       const baseH = Number(s.baseHours || 0);
       const otH = Number(s.otHours || 0);
+
       basePay += baseH * profile.baseRate;
       otPay += otH * profile.baseRate * mult;
       totalOTHours += otH;
-    } else {
-      weeklyCandidates.push(s);
+      return;
     }
 
-    // night bonus applies regardless of daily/weekly mode
-    const company = getCompanyById(s.companyId);
-    const nb = company?.nightBonus || { mode: "none", amount: 0, start: "22:00", end: "06:00" };
-
-    const nh = calcNightHoursForShift(s.start, s.finish, nb.start, nb.end, !!s.annualLeave);
-    nightHoursTotal += nh;
-
-    if (nb.mode === "per_hour") nightPayTotal += nh * Number(nb.amount || 0);
-    else if (nb.mode === "per_shift") { if (nh > 0) nightPayTotal += Number(nb.amount || 0); }
-    else if (nb.mode === "per_week") {
-      if (nh > 0 && s.companyId && !nightWeeklyPaid.has(s.companyId)) {
-        nightWeeklyPaid.add(s.companyId);
-        nightPayTotal += Number(nb.amount || 0);
-      }
-    }
+    // --- Weekly mode: defer OT allocation
+    weeklyCandidates.push(s);
   });
 
-  // weekly allocation
+  // Weekly allocation
   if (weeklyCandidates.length) {
     if (mode === "perCompany") {
       const remainingByCompany = {};
@@ -937,7 +958,7 @@ function processShifts(group, mode = "overall") {
         }
       });
     } else {
-      // overall weekly threshold for weekly-mode companies (uses global settings.baseHours)
+      // overall weekly threshold uses settings.baseHours
       let remainingBase = Number(settings.baseHours ?? 0);
 
       weeklyCandidates.forEach(s => {
@@ -976,7 +997,6 @@ function processShifts(group, mode = "overall") {
     total: basePay + otPay + nightPayTotal
   };
 }
-
 /* ===============================
    SUMMARY: WEEK/MONTH TILES
 ================================ */

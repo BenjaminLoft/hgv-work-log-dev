@@ -48,6 +48,19 @@
         <option value="daily">Daily overtime (after X hours worked)</option>
       </select>
 
+      <label>Minimum paid shift hours (optional)</label>
+      <input type="number" step="0.25" id="minPaidShiftHours" placeholder="e.g. 8">
+
+      <h2>Night Bonus</h2>
+
+      <label>Night Bonus Type</label>
+      <select id="nightBonusMode">
+        <option value="none">None</option>
+        <option value="per_hour">Per hour (within window)</option>
+        <option value="per_shift">Per shift (if any time in window)</option>
+        <option value="per_week">Per week (once per week if any time in window)</option>
+      </select>
+
       <!-- Hide/show this block based on payMode -->
       <div id="nightBonusWindow">
 		<div class="grid">
@@ -65,19 +78,6 @@
 			Tip: For “per shift”/“per week”, the window still decides whether a shift qualifies.
 		</div>
 	  </div>
-
-      <label>Minimum paid shift hours (optional)</label>
-      <input type="number" step="0.25" id="minPaidShiftHours" placeholder="e.g. 8">
-
-      <h2>Night Bonus</h2>
-
-      <label>Night Bonus Type</label>
-      <select id="nightBonusMode">
-        <option value="none">None</option>
-        <option value="per_hour">Per hour (within window)</option>
-        <option value="per_shift">Per shift (if any time in window)</option>
-        <option value="per_week">Per week (once per week if any time in window)</option>
-      </select>
 
       <label>Night Bonus Amount (£)</label>
       <input type="number" step="0.01" id="nightBonusAmount" placeholder="0.50">
