@@ -94,3 +94,112 @@ self.addEventListener("message", (event) => {
     self.skipWaiting();
   }
 });
+
+/* ===============================
+   PWA: MANUAL UPDATE CHECK
+================================ */
+
+let __swRegistration = null;
+
+// If you already have SW registration code, just add the line:
+// __swRegistration = reg;
+if ("serviceWorker" in navigator) {
+  window.addEventListener("load", async () => {
+    try {
+      const reg = await navigator.serviceWorker.register("./service-worker.js");
+      __swRegistration = reg;
+
+      // If there's already a waiting worker, show banner immediately
+      if (reg.waiting) showUpdateBanner(reg);
+
+      reg.addEventListener("updatefound", () => {
+        const newWorker = reg.installing;
+        if (!newWorker) return;
+
+        newWorker.addEventListener("statechange", () => {
+          if (newWorker.state === "installed" && navigator.serviceWorker.controller) {
+            showUpdateBanner(reg);
+          }
+        });
+      });
+
+      let refreshing = false;
+      navigator.serviceWorker.addEventListener("controllerchange", () => {
+        if (refreshing) return;
+        refreshing = true;
+        window.location.reload();
+      });
+
+    } catch (err) {
+      console.error("Service worker registration failed:", err);
+    }
+  });
+}
+
+function setUpdateStatus(msg) {
+  const el = document.getElementById("updateStatus");
+  if (el) el.textContent = msg;
+}
+
+async function checkForUpdates() {
+  if (!("serviceWorker" in navigator)) {
+    alert("Service workers aren’t supported in this browser.");
+    return;
+  }
+
+  // Prefer cached reg if we have it, else fetch it
+  const reg = __swRegistration || await navigator.serviceWorker.getRegistration();
+  if (!reg) {
+    alert("No service worker registered yet.");
+    return;
+  }
+
+  setUpdateStatus("Checking for updates…");
+
+  // If already waiting, we already have an update
+  if (reg.waiting) {
+    setUpdateStatus("Update available. Tap Refresh to install it.");
+    showUpdateBanner(reg);
+    return;
+  }
+
+  // Wait for updatefound or timeout
+  let resolved = false;
+
+  const done = (text) => {
+    if (resolved) return;
+    resolved = true;
+    setUpdateStatus(text);
+  };
+
+  const onUpdateFound = () => {
+    const nw = reg.installing;
+    if (!nw) return;
+
+    nw.addEventListener("statechange", () => {
+      if (nw.state === "installed") {
+        // If controller exists, it's an update; otherwise first install
+        if (navigator.serviceWorker.controller) {
+          done("Update available. Tap Refresh to install it.");
+          showUpdateBanner(reg);
+        } else {
+          done("Offline support enabled.");
+        }
+      }
+    });
+  };
+
+  reg.addEventListener("updatefound", onUpdateFound, { once: true });
+
+  try {
+    await reg.update();
+  } catch (e) {
+    done("Couldn’t check for updates (are you offline?).");
+    return;
+  }
+
+  // If nothing happens after a short wait, assume no update
+  setTimeout(() => {
+    if (!resolved) done("You’re up to date.");
+  }, 2500);
+}
