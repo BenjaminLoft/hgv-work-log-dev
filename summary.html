@@ -4,18 +4,11 @@
   <title>Summary</title>
   <link rel="stylesheet" href="styles.css">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <link rel="manifest" href="manifest.json">
-  <meta name="theme-color" content="#0b1220">
-  <meta name="apple-mobile-web-app-capable" content="yes">
-  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-  <meta name="apple-mobile-web-app-title" content="Work Log">
-  <link rel="apple-touch-icon" href="icons/icon-192.png">
 </head>
 <body>
 
 <nav class="nav">
-  <a href="index.html">Home</a>
-  <a href="enter-shift.html">Enter Shift</a>
+  <a href="index.html">Enter Shift</a>
   <a href="summary.html">Summary</a>
   <a href="shifts.html">All Shifts</a>
   <a href="companies.html">Companies</a>
@@ -27,23 +20,11 @@
   <div class="screen">
     <h1>Summary</h1>
 
-    <div class="section">
-      <h2>This Week (Mon–Sun)</h2>
-      <div class="grid" id="thisWeekTiles"></div>
-    </div>
+    <h2>This Week (Mon–Sun)</h2>
+	<div class="grid" id="thisWeekTiles"></div>
 
-    <div class="section">
-      <h2>This Month</h2>
-      <div class="grid" id="thisMonthTiles"></div>
-    </div>
-
-    <div class="section">
-      <h2>Exports</h2>
-      <div class="button-row">
-        <button onclick="exportPayslip('week')">Export Week Payslip (PDF)</button>
-        <button class="button-secondary" onclick="exportPayslip('month')">Export Month Payslip (PDF)</button>
-      </div>
-    </div>
+	<h2>This Month</h2>
+	<div class="grid" id="thisMonthTiles"></div>
 
     <div class="section">
       <h2>By Company</h2>
@@ -51,35 +32,24 @@
     </div>
 
     <div class="section">
-      <details class="details">
-        <summary>Advanced breakdowns</summary>
+      <h2>Weekly Breakdown</h2>
+      <div id="weeklySummary"></div>
 
-        <div style="margin-top:12px;">
-          <h2>Weekly Breakdown</h2>
-          <div id="weeklySummary"></div>
-          <button class="button-secondary" onclick="exportSection('weeklySummary')">Export Weekly (Simple)</button>
-        </div>
-
-        <div style="margin-top:18px;">
-          <h2>Monthly Breakdown</h2>
-          <div id="monthlySummary"></div>
-          <button class="button-secondary" onclick="exportSection('monthlySummary')">Export Monthly (Simple)</button>
-        </div>
-      </details>
+      <button onclick="exportSection('weeklySummary')">Export Weekly PDF</button>
     </div>
 
     <div class="section">
-      <details class="details">
-        <summary>Backup & restore</summary>
+      <h2>Monthly Breakdown</h2>
+      <div id="monthlySummary"></div>
 
-        <div style="margin-top:12px;">
-          <button class="button-secondary" onclick="downloadBackup()">Download Backup</button>
-          <label style="margin-top:12px;">Restore backup</label>
-          <input type="file" id="restoreFile" onchange="restoreBackup(event)">
-        </div>
-      </details>
+      <button onclick="exportSection('monthlySummary')">Export Monthly PDF</button>
     </div>
 
+    <div class="section">
+      <h2>Backup</h2>
+      <button onclick="downloadBackup()">Download Backup</button>
+      <input type="file" id="restoreFile" onchange="restoreBackup(event)">
+    </div>
   </div>
 </div>
 

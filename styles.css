@@ -293,48 +293,7 @@ button:active{ transform: scale(0.99); }
   grid-template-columns: 1fr 1fr;
   gap: 12px;
 }
-
-/* Buttons side-by-side where it makes sense */
-.button-row{
-  display:flex;
-  gap:10px;
-  flex-wrap:wrap;
-  margin-top: 12px;
-}
-.button-row button{
-  flex: 1;
-  min-width: 180px;
-}
-
-/* Make details look like part of the UI, not raw HTML */
-.details{
-  border: 1px solid rgba(255,255,255,0.08);
-  border-radius: var(--radius);
-  padding: 12px 14px;
-  background: rgba(0,0,0,0.12);
-}
-.details > summary{
-  cursor:pointer;
-  font-weight: 800;
-  color: var(--text);
-}
-.details[open] > summary{
-  margin-bottom: 10px;
-}
-
-/* Keep summary tiles in 2 columns on phones */
-@media (max-width: 520px){
-  .grid{
-    grid-template-columns: 1fr 1fr;
-    gap: 10px;
-  }
-  .tile{
-    padding: 12px;
-  }
-  .tile .value{
-    font-size: 18px;
-  }
-}
+@media (max-width: 520px){ .grid{ grid-template-columns: 1fr; } }
 .tile .label{ color: var(--muted2); font-size: 12px; letter-spacing: 0.12em; text-transform: uppercase; }
 .tile .value{ font-size: 22px; font-weight: 900; margin-top: 6px; }
 
@@ -376,35 +335,4 @@ input[type="file"]{
   width: auto;
   margin-top: 0;
   white-space: nowrap;
-}
-
-[hidden] { display: none !important; }
-
-/* PWA Update Banner */
-.update-banner{
-  position: fixed;
-  left: 12px;
-  right: 12px;
-  bottom: 12px;
-  z-index: 9999;
-
-  display:flex;
-  align-items:center;
-  justify-content:space-between;
-  gap: 12px;
-
-  padding: 12px 14px;
-  border-radius: 16px;
-
-  background: rgba(0,0,0,0.65);
-  border: 1px solid rgba(255,255,255,0.14);
-  backdrop-filter: blur(10px);
-  box-shadow: 0 18px 45px rgba(0,0,0,0.45);
-  color: var(--text);
-}
-
-.update-actions{
-  display:flex;
-  gap:10px;
-  flex-wrap:wrap;
 }
