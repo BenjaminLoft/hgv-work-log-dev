@@ -2,7 +2,7 @@
 <html>
 <head>
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>All Shifts</title>
+  <title>Vehicles</title>
   <link rel="stylesheet" href="styles.css">
   <link rel="manifest" href="manifest.json">
   <meta name="theme-color" content="#0b1220">
@@ -25,20 +25,17 @@
 
 <div class="container">
 	<div class="screen">
-		<h2>All Shifts (Weekly View)</h2>
-		<div id="shiftList"></div>
+		<h2>Vehicle Management</h2>
+		<label>Add Vehicle (e.g. AB12 CDE)</label>
+		<div class="inline-row">
+			<input type="text" id="newVehicle" placeholder="AB12 CDE">
+			<button onclick="addVehicle()">Add</button>
+		</div>
+		<div id="vehicleList"></div>
 	</div>
 </div>
 
-<script src="app.js"></script>
-<script>
-  if (typeof renderWeeklyGroupedShifts === "function") {
-    renderWeeklyGroupedShifts();
-  } else {
-    document.getElementById("shiftList").innerHTML =
-      "<div class='shift-card'>Weekly grouped shifts function is missing from app.js</div>";
-  }
-</script>
 
+<script src="app.js"></script>
 </body>
 </html>
