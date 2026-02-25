@@ -507,16 +507,25 @@ function deleteVehicle(i) {
 function renderVehicles() {
   const list = document.getElementById("vehicleList");
   const dropdown = document.getElementById("vehicle");
+  const datalist = document.getElementById("vehicleOptions");
 
   if (list) list.innerHTML = "";
-  if (dropdown) dropdown.innerHTML = "<option value=''>Select Vehicle</option>";
+  if (dropdown && dropdown.tagName === "SELECT") {
+    dropdown.innerHTML = "<option value=''>Select Vehicle</option>";
+  }
+  if (datalist) datalist.innerHTML = "";
 
   vehicles.forEach((v, i) => {
-    if (dropdown) {
+    if (dropdown && dropdown.tagName === "SELECT") {
       const opt = document.createElement("option");
       opt.value = v;
       opt.textContent = v;
       dropdown.appendChild(opt);
+    }
+    if (datalist) {
+      const opt = document.createElement("option");
+      opt.value = v;
+      datalist.appendChild(opt);
     }
 
     if (list) {
@@ -694,6 +703,13 @@ function addOrUpdateShift() {
   const companyId = (companyEl.value || "").trim();
   if (!companyId) return alert("Select a company");
 
+  const vehicleRaw = document.getElementById("vehicle")?.value || "";
+  const vehicle = vehicleRaw.toUpperCase().trim();
+
+  if (vehicle && !vehicles.includes(vehicle)) {
+    vehicles.push(vehicle);
+  }
+
   const shift = {
     id: (editingIndex !== null && shifts[editingIndex]?.id) ? shifts[editingIndex].id : generateShiftId(),
     date,
@@ -701,7 +717,7 @@ function addOrUpdateShift() {
 
     start: document.getElementById("start")?.value || "",
     finish: document.getElementById("finish")?.value || "",
-    vehicle: document.getElementById("vehicle")?.value || "",
+    vehicle,
     trailer1: document.getElementById("trailer1")?.value || "",
     trailer2: document.getElementById("trailer2")?.value || "",
     defects: document.getElementById("defects")?.value || "",
@@ -1923,6 +1939,23 @@ document.addEventListener("DOMContentLoaded", () => {
   
   // Companies page
   updateCompanyFormVisibility();
+
+  // Vehicle input formatting (datalist input on enter-shift)
+  const vehInput = document.getElementById("vehicle");
+  if (vehInput && vehInput.tagName === "INPUT") {
+    const formatVehicle = () => {
+      const start = vehInput.selectionStart || 0;
+      const end = vehInput.selectionEnd || 0;
+      const next = (vehInput.value || "").toUpperCase().replace(/\s+/g, " ").trimStart();
+      vehInput.value = next;
+      vehInput.setSelectionRange(start, end);
+    };
+
+    vehInput.addEventListener("input", formatVehicle);
+    vehInput.addEventListener("change", () => {
+      vehInput.value = (vehInput.value || "").toUpperCase().trim();
+    });
+  }
 });
 
 /* ===============================
