@@ -30,7 +30,7 @@
       Quick overview + setup checks. No spreadsheets harmed in the making of this page.
     </div>
 
-    <div class="shift-card" style="margin-top:14px;">
+    <div class="shift-card" id="gettingStartedCard" style="margin-top:14px;">
       <strong>Getting started</strong>
       <div class="meta" id="setupStatus" style="margin-top:8px;"></div>
 
@@ -47,7 +47,9 @@
       </div>
     </div>
 
-    <h2 style="margin-top:18px;">This Week</h2>
+    <h2 style="margin-top:18px;">At a Glance</h2>
+
+    <h2 style="margin-top:12px;">This Week</h2>
     <div class="grid" id="thisWeekTiles"></div>
 
     <h2 style="margin-top:18px;">This Month</h2>
@@ -94,6 +96,12 @@
     statusEl.innerHTML = items.map(i => {
       return `<div>${i.ok ? "✅" : "⬜"} ${i.text}</div>`;
     }).join("");
+
+    if (hasAnyCompany && hasUserCompany && hasShift) {
+      const card = document.getElementById("gettingStartedCard");
+      if (card) card.remove();
+      return;
+    }
 
     // If they haven’t set up companies yet, nudge harder:
     if (!hasUserCompany) {

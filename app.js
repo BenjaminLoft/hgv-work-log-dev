@@ -684,7 +684,6 @@ function addOrUpdateShift() {
   if (!dateInput) return;
 
   ensureDefaultCompany();
-  renderCompanyDropdowns();
 
   const date = (dateInput.value || "").trim();
   if (!date) return alert("Select date");
@@ -860,9 +859,38 @@ function processShifts(group, mode = "overall") {
 
   // Month mode = sum per-shift pricing (no weekly allocation across month)
   if (mode === "monthOverall") {
+    const nightWeeklyPaidMonth = new Set();
+
     arr.forEach(s => {
       const profile = getShiftRateProfile(s);
       const mult = getShiftOTMultiplier(s, profile);
+      const company = getCompanyById(s.companyId);
+      const nb = company?.nightBonus || { mode: "none", amount: 0, start: "22:00", end: "06:00" };
+
+      // Night bonus (per shift)
+      const nh = calcNightHoursForShift(
+        s.start,
+        s.finish,
+        nb.start || "22:00",
+        nb.end || "06:00",
+        !!s.annualLeave
+      );
+      nightHoursTotal += nh;
+
+      if (nb.mode === "per_hour") {
+        nightPayTotal += nh * (Number(nb.amount) || 0);
+      } else if (nb.mode === "per_shift") {
+        if (nh > 0) nightPayTotal += (Number(nb.amount) || 0);
+      } else if (nb.mode === "per_week") {
+        if (nh > 0) {
+          const wk = getWeekStartMonday(s.date || "");
+          const key = `${wk}|${String(s.companyId || "")}`;
+          if (!nightWeeklyPaidMonth.has(key)) {
+            nightWeeklyPaidMonth.add(key);
+            nightPayTotal += (Number(nb.amount) || 0);
+          }
+        }
+      }
 
       if (s.bankHoliday) {
         const paid = Number(s.paid || 0);
@@ -887,9 +915,9 @@ function processShifts(group, mode = "overall") {
       otHours: totalOTHours,
       basePay,
       otPay,
-      nightHours: 0,
-      nightPay: 0,
-      total: basePay + otPay
+      nightHours: nightHoursTotal,
+      nightPay: nightPayTotal,
+      total: basePay + otPay + nightPayTotal
     };
   }
 
@@ -1061,7 +1089,19 @@ function dateOnlyToDate(dateStr) {
   return new Date((dateStr || "") + "T00:00:00");
 }
 
-function renderBreakdownTiles(targetId, titleLabel, result) {
+const TILE_SPECS = {
+  worked: { label: "Worked", type: "hours" },
+  breaks: { label: "Breaks", type: "hours" },
+  paid: { label: "Paid", type: "hours" },
+  baseHours: { label: "Base Hours", type: "hours" },
+  otHours: { label: "OT Hours", type: "hours" },
+  basePay: { label: "Base Pay", type: "money" },
+  otPay: { label: "OT Pay", type: "money" },
+  nightPay: { label: "Night Pay", type: "money" },
+  total: { label: "Total", type: "money" }
+};
+
+function renderBreakdownTiles(targetId, titleLabel, result, order) {
   const el = document.getElementById(targetId);
   if (!el) return;
 
@@ -1076,25 +1116,45 @@ function renderBreakdownTiles(targetId, titleLabel, result) {
   const nightPay = Number(result.nightPay || 0);
   const total = Number(result.total || 0);
 
-  el.innerHTML = `
-    <div class="tile"><div class="label">${titleLabel} Worked</div><div class="value">${worked.toFixed(2)} hrs</div></div>
-    <div class="tile"><div class="label">${titleLabel} Breaks</div><div class="value">${breaks.toFixed(2)} hrs</div></div>
-    <div class="tile"><div class="label">${titleLabel} Paid</div><div class="value">${paid.toFixed(2)} hrs</div></div>
+  const values = {
+    worked,
+    breaks,
+    paid,
+    baseHours,
+    otHours,
+    basePay,
+    otPay,
+    nightPay,
+    total
+  };
 
-    <div class="tile"><div class="label">${titleLabel} Base Hours</div><div class="value">${baseHours.toFixed(2)} hrs</div></div>
-    <div class="tile"><div class="label">${titleLabel} OT Hours</div><div class="value">${otHours.toFixed(2)} hrs</div></div>
+  const fmt = (type, val) => {
+    if (type === "money") return `£${Number(val || 0).toFixed(2)}`;
+    return `${Number(val || 0).toFixed(2)} hrs`;
+  };
 
-    <div class="tile"><div class="label">${titleLabel} Base Pay</div><div class="value">£${basePay.toFixed(2)}</div></div>
-    <div class="tile"><div class="label">${titleLabel} OT Pay</div><div class="value">£${otPay.toFixed(2)}</div></div>
-    <div class="tile"><div class="label">${titleLabel} Night Pay</div><div class="value">£${nightPay.toFixed(2)}</div></div>
-    <div class="tile"><div class="label">${titleLabel} Total</div><div class="value">£${total.toFixed(2)}</div></div>
-  `;
+  const list = Array.isArray(order) && order.length
+    ? order
+    : ["worked", "breaks", "paid", "baseHours", "otHours", "basePay", "otPay", "nightPay", "total"];
+
+  const prefix = titleLabel ? `${titleLabel} ` : "";
+  el.innerHTML = list.map(key => {
+    const spec = TILE_SPECS[key];
+    if (!spec) return "";
+    const value = fmt(spec.type, values[key]);
+    return `<div class="tile"><div class="label">${prefix}${spec.label}</div><div class="value">${value}</div></div>`;
+  }).join("");
 }
 
 function renderCurrentPeriodTiles() {
   const weekTiles = document.getElementById("thisWeekTiles");
   const monthTiles = document.getElementById("thisMonthTiles");
   if (!weekTiles && !monthTiles) return;
+
+  const isSummaryPage = !!document.getElementById("panelWeek");
+  const order = isSummaryPage
+    ? ["worked", "paid", "baseHours", "basePay", "otHours", "otPay", "breaks", "nightPay", "total"]
+    : ["worked", "otHours", "basePay", "otPay", "nightPay", "total"];
 
   const weekStart = getCurrentWeekStartMonday();
   const weekEnd = addDays(weekStart, 7);
@@ -1105,13 +1165,13 @@ function renderCurrentPeriodTiles() {
   });
 
   const weekResult = processShifts(weekShifts, "overall");
-  renderBreakdownTiles("thisWeekTiles", "This Week", weekResult);
+  renderBreakdownTiles("thisWeekTiles", "", weekResult, order);
 
   const ym = new Date().toISOString().slice(0, 7);
   const monthShifts = shifts.filter(s => (s.date || "").slice(0, 7) === ym);
 
   const monthResult = processMonthAsWeeks(monthShifts, "overall");
-  renderBreakdownTiles("thisMonthTiles", "This Month", monthResult);
+  renderBreakdownTiles("thisMonthTiles", "", monthResult, order);
 }
 
 /* ===============================
@@ -1894,12 +1954,10 @@ if ("serviceWorker" in navigator) {
         });
       });
 
-      // Reload once new SW takes control
-      let refreshing = false;
+      // When new SW takes control, leave reload to user action
       navigator.serviceWorker.addEventListener("controllerchange", () => {
-        if (refreshing) return;
-        refreshing = true;
-        window.location.reload();
+        setUpdateStatus("Update ready. Refresh when you're ready.");
+        showRefreshBanner();
       });
 
     } catch (err) {
@@ -1911,6 +1969,84 @@ if ("serviceWorker" in navigator) {
 function setUpdateStatus(msg) {
   const el = document.getElementById("updateStatus");
   if (el) el.textContent = msg;
+}
+
+function showRefreshBanner() {
+  const existing = document.getElementById("refreshBanner");
+  if (existing) return;
+
+  const banner = document.createElement("div");
+  banner.id = "refreshBanner";
+  banner.className = "update-banner";
+  banner.setAttribute("role", "status");
+
+  const msg = document.createElement("div");
+  msg.textContent = "Update ready. Refresh to apply it.";
+
+  const actions = document.createElement("div");
+  actions.className = "update-actions";
+
+  const btnRefresh = document.createElement("button");
+  btnRefresh.className = "button-secondary";
+  btnRefresh.textContent = "Refresh now";
+  btnRefresh.onclick = () => window.location.reload();
+
+  const btnLater = document.createElement("button");
+  btnLater.className = "button-secondary";
+  btnLater.textContent = "Later";
+  btnLater.onclick = () => banner.remove();
+
+  actions.appendChild(btnRefresh);
+  actions.appendChild(btnLater);
+  banner.appendChild(msg);
+  banner.appendChild(actions);
+
+  document.body.appendChild(banner);
+
+  // Auto-dismiss after a reasonable window
+  setTimeout(() => {
+    banner.remove();
+  }, 12000);
+}
+
+function showUpdateBanner(reg) {
+  if (!reg?.waiting) return;
+
+  // Remove any existing banner
+  const existing = document.getElementById("updateBanner");
+  if (existing) existing.remove();
+
+  const banner = document.createElement("div");
+  banner.id = "updateBanner";
+  banner.setAttribute("role", "status");
+  banner.className = "update-banner";
+
+  const msg = document.createElement("div");
+  msg.textContent = "An update is available.";
+
+  const actions = document.createElement("div");
+  actions.className = "update-actions";
+
+  const btnUpdate = document.createElement("button");
+  btnUpdate.className = "button-secondary";
+  btnUpdate.textContent = "Update now";
+  btnUpdate.onclick = () => {
+    setUpdateStatus("Updating...");
+    banner.remove();
+    reg.waiting?.postMessage({ type: "SKIP_WAITING" });
+  };
+
+  const btnLater = document.createElement("button");
+  btnLater.className = "button-secondary";
+  btnLater.textContent = "Later";
+  btnLater.onclick = () => banner.remove();
+
+  actions.appendChild(btnUpdate);
+  actions.appendChild(btnLater);
+  banner.appendChild(msg);
+  banner.appendChild(actions);
+
+  document.body.appendChild(banner);
 }
 
 async function checkForUpdates() {
