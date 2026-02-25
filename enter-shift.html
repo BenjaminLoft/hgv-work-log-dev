@@ -44,8 +44,10 @@
     <input type="time" id="finish">
 
     <label>Vehicle</label>
-    <input type="text" id="vehicle" list="vehicleOptions" placeholder="Registration">
-    <datalist id="vehicleOptions"></datalist>
+    <div class="combo-wrap" id="vehicleComboWrap">
+      <input type="text" id="vehicle" placeholder="Registration" autocomplete="off">
+      <div id="vehicleMenu" class="combo-menu" hidden></div>
+    </div>
 
     <label>Trailer 1</label>
     <input type="text" id="trailer1">

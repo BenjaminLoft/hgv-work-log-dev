@@ -380,6 +380,47 @@ input[type="file"]{
 
 [hidden] { display: none !important; }
 
+/* Input combobox (vehicle on enter-shift) */
+.combo-wrap{
+  position: relative;
+}
+.combo-menu{
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: calc(100% + 6px);
+  z-index: 30;
+  max-height: 220px;
+  overflow-y: auto;
+  border-radius: 12px;
+  border: 1px solid rgba(255,255,255,0.12);
+  background: rgba(8,14,24,0.96);
+  box-shadow: var(--shadowB);
+  padding: 6px;
+}
+.combo-option{
+  width: 100%;
+  margin: 0;
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--text);
+  text-align: left;
+  font-weight: 600;
+  box-shadow: none;
+}
+.combo-option:hover{
+  background: rgba(255,255,255,0.08);
+  border-color: rgba(255,255,255,0.10);
+  filter: none;
+}
+.combo-empty{
+  padding: 10px 12px;
+  color: var(--muted);
+  font-size: 13px;
+}
+
 /* PWA Update Banner */
 .update-banner{
   position: fixed;

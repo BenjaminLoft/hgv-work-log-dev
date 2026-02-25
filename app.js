@@ -507,13 +507,11 @@ function deleteVehicle(i) {
 function renderVehicles() {
   const list = document.getElementById("vehicleList");
   const dropdown = document.getElementById("vehicle");
-  const datalist = document.getElementById("vehicleOptions");
 
   if (list) list.innerHTML = "";
   if (dropdown && dropdown.tagName === "SELECT") {
     dropdown.innerHTML = "<option value=''>Select Vehicle</option>";
   }
-  if (datalist) datalist.innerHTML = "";
 
   vehicles.forEach((v, i) => {
     if (dropdown && dropdown.tagName === "SELECT") {
@@ -522,11 +520,6 @@ function renderVehicles() {
       opt.textContent = v;
       dropdown.appendChild(opt);
     }
-    if (datalist) {
-      const opt = document.createElement("option");
-      opt.value = v;
-      datalist.appendChild(opt);
-    }
 
     if (list) {
       const div = document.createElement("div");
@@ -534,6 +527,76 @@ function renderVehicles() {
       div.innerHTML = `${escapeHtml(v)} <button onclick="deleteVehicle(${i})">Delete</button>`;
       list.appendChild(div);
     }
+  });
+
+  // Keep combobox suggestions in sync on enter-shift page.
+  renderVehicleMenuOptions((document.getElementById("vehicle")?.value || ""));
+}
+
+function renderVehicleMenuOptions(filterText = "") {
+  const menu = document.getElementById("vehicleMenu");
+  if (!menu) return;
+
+  const filter = String(filterText || "").toUpperCase().trim();
+  const options = vehicles
+    .slice()
+    .sort((a, b) => a.localeCompare(b))
+    .filter(v => !filter || v.includes(filter));
+
+  if (!options.length) {
+    menu.innerHTML = `<div class="combo-empty">No matches. Type a new registration.</div>`;
+    return;
+  }
+
+  menu.innerHTML = options
+    .map(v => `<button type="button" class="combo-option" data-value="${escapeHtml(v)}">${escapeHtml(v)}</button>`)
+    .join("");
+}
+
+function initVehicleCombobox() {
+  const input = document.getElementById("vehicle");
+  const menu = document.getElementById("vehicleMenu");
+  const wrap = document.getElementById("vehicleComboWrap");
+  if (!input || !menu || !wrap) return;
+
+  const openMenu = () => {
+    renderVehicleMenuOptions(input.value);
+    menu.hidden = false;
+  };
+  const closeMenu = () => {
+    menu.hidden = true;
+  };
+
+  input.addEventListener("focus", openMenu);
+  input.addEventListener("click", openMenu);
+
+  input.addEventListener("input", () => {
+    const start = input.selectionStart || 0;
+    const end = input.selectionEnd || 0;
+    input.value = (input.value || "").toUpperCase().replace(/\s+/g, " ").trimStart();
+    input.setSelectionRange(start, end);
+    openMenu();
+  });
+
+  input.addEventListener("change", () => {
+    input.value = (input.value || "").toUpperCase().trim();
+  });
+
+  input.addEventListener("keydown", (e) => {
+    if (e.key === "Escape") closeMenu();
+  });
+
+  // Keep focus in input when choosing an option.
+  menu.addEventListener("mousedown", (e) => e.preventDefault());
+  menu.addEventListener("click", (e) => {
+    const btn = e.target.closest(".combo-option");
+    if (!btn) return;
+    input.value = (btn.getAttribute("data-value") || "").toUpperCase().trim();
+    closeMenu();
+  });
+
+  document.addEventListener("click", (e) => {
+    if (!wrap.contains(e.target)) closeMenu();
   });
 }
 
@@ -1940,22 +2003,7 @@ document.addEventListener("DOMContentLoaded", () => {
   // Companies page
   updateCompanyFormVisibility();
 
-  // Vehicle input formatting (datalist input on enter-shift)
-  const vehInput = document.getElementById("vehicle");
-  if (vehInput && vehInput.tagName === "INPUT") {
-    const formatVehicle = () => {
-      const start = vehInput.selectionStart || 0;
-      const end = vehInput.selectionEnd || 0;
-      const next = (vehInput.value || "").toUpperCase().replace(/\s+/g, " ").trimStart();
-      vehInput.value = next;
-      vehInput.setSelectionRange(start, end);
-    };
-
-    vehInput.addEventListener("input", formatVehicle);
-    vehInput.addEventListener("change", () => {
-      vehInput.value = (vehInput.value || "").toUpperCase().trim();
-    });
-  }
+  initVehicleCombobox();
 });
 
 /* ===============================
