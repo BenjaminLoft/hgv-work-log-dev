@@ -7,19 +7,26 @@
    STORAGE
 ================================ */
 
-let shifts = JSON.parse(localStorage.getItem("shifts")) || [];
-let vehicles = JSON.parse(localStorage.getItem("vehicles")) || [];
-let companies = JSON.parse(localStorage.getItem("companies")) || [];
-
-let settings = JSON.parse(localStorage.getItem("settings")) || {
+const DATA_MODEL_VERSION = 3;
+const DATA_VERSION_KEY = "dataVersion";
+const DEFAULT_SETTINGS = {
   defaultStart: "",
+  defaultFinish: "",
   baseRate: 17.75,
   baseHours: 45,
   otWeekday: 1.25,
   otSaturday: 1.25,
   otSunday: 1.5,
-  otBankHoliday: 2
+  otBankHoliday: 2,
+  annualLeaveAllowance: 0,
+  summaryPeriodMode: "month"
 };
+
+let shifts = JSON.parse(localStorage.getItem("shifts")) || [];
+let vehicles = JSON.parse(localStorage.getItem("vehicles")) || [];
+let companies = JSON.parse(localStorage.getItem("companies")) || [];
+
+let settings = JSON.parse(localStorage.getItem("settings")) || { ...DEFAULT_SETTINGS };
 
 let editingIndex = null;
 
@@ -58,6 +65,7 @@ function saveAll() {
   localStorage.setItem("vehicles", JSON.stringify(vehicles));
   localStorage.setItem("companies", JSON.stringify(companies));
   localStorage.setItem("settings", JSON.stringify(settings));
+  localStorage.setItem(DATA_VERSION_KEY, String(DATA_MODEL_VERSION));
 }
 
 function generateCompanyId() {
@@ -67,6 +75,118 @@ function generateCompanyId() {
 function generateShiftId() {
   return "shf_" + Math.random().toString(36).slice(2, 10);
 }
+
+function getStoredDataVersion() {
+  const raw = Number(localStorage.getItem(DATA_VERSION_KEY));
+  return Number.isFinite(raw) && raw > 0 ? raw : 1;
+}
+
+function normalizeSettings(src) {
+  const out = { ...DEFAULT_SETTINGS, ...(src && typeof src === "object" ? src : {}) };
+  out.baseRate = Number(out.baseRate || 0);
+  out.baseHours = Number(out.baseHours || 0);
+  out.otWeekday = Number(out.otWeekday || 1);
+  out.otSaturday = Number(out.otSaturday || 1);
+  out.otSunday = Number(out.otSunday || 1);
+  out.otBankHoliday = Number(out.otBankHoliday || 1);
+  out.annualLeaveAllowance = Number(out.annualLeaveAllowance || 0);
+  return out;
+}
+
+function normalizeVehicles(src) {
+  if (!Array.isArray(src)) return [];
+  return [...new Set(src
+    .map(v => String(v || "").toUpperCase().trim())
+    .filter(Boolean)
+  )];
+}
+
+function normalizeCompany(src) {
+  const c = (src && typeof src === "object") ? src : {};
+  const nightBonus = c.nightBonus || {};
+
+  return {
+    ...c,
+    id: String(c.id || generateCompanyId()),
+    name: String(c.name || "Company"),
+    baseRate: Number(c.baseRate || 0),
+    payMode: (c.payMode === "daily") ? "daily" : "weekly",
+    baseWeeklyHours: Number(c.baseWeeklyHours || 0),
+    baseDailyPaidHours: Number(c.baseDailyPaidHours || 0),
+    standardShiftLength: Number(c.standardShiftLength || 0),
+    dailyOTAfterWorkedHours: Number(c.dailyOTAfterWorkedHours || 0),
+    minPaidShiftHours: Number(c.minPaidShiftHours || 0),
+    nightBonus: {
+      mode: nightBonus.mode || "none",
+      amount: Number(nightBonus.amount || 0),
+      start: nightBonus.start || "22:00",
+      end: nightBonus.end || "06:00"
+    },
+    ot: {
+      weekday: Number(c.ot?.weekday || 1),
+      saturday: Number(c.ot?.saturday || 1),
+      sunday: Number(c.ot?.sunday || 1),
+      bankHoliday: Number(c.ot?.bankHoliday || 1)
+    },
+    showVehicleField: (c.showVehicleField !== false),
+    showTrailerFields: (c.showTrailerFields !== false),
+    showMileageFields: !!c.showMileageFields,
+    bonusRules: Array.isArray(c.bonusRules) ? c.bonusRules : [],
+    vehicleIds: Array.isArray(c.vehicleIds) ? c.vehicleIds : []
+  };
+}
+
+function normalizeShift(src) {
+  const s = (src && typeof src === "object") ? src : {};
+  const expenses = s.expenses || {};
+
+  return {
+    ...s,
+    id: String(s.id || generateShiftId()),
+    companyId: String(s.companyId || ""),
+    date: String(s.date || ""),
+    start: String(s.start || ""),
+    finish: String(s.finish || ""),
+    vehicle: String(s.vehicle || "").toUpperCase().trim(),
+    trailer1: String(s.trailer1 || ""),
+    trailer2: String(s.trailer2 || ""),
+    defects: String(s.defects || s.notes || ""),
+    notes: String(s.notes || s.defects || ""),
+    annualLeave: !!s.annualLeave,
+    sickDay: !!s.sickDay,
+    bankHoliday: !!s.bankHoliday,
+    startMileage: Number(s.startMileage || 0),
+    finishMileage: Number(s.finishMileage || 0),
+    mileage: Number(s.mileage || Math.max(0, Number(s.finishMileage || 0) - Number(s.startMileage || 0))),
+    shiftType: s.shiftType === "night" ? "night" : "day",
+    expenses: {
+      parking: Number(expenses.parking || 0),
+      tolls: Number(expenses.tolls || 0)
+    },
+    nightOutCount: Number(s.nightOutCount || 0),
+    nightOutPay: Number(s.nightOutPay || 0)
+  };
+}
+
+function migrateData(sourceVersion = getStoredDataVersion()) {
+  const from = Number(sourceVersion || 1);
+  if (!Array.isArray(shifts)) shifts = [];
+  if (!Array.isArray(vehicles)) vehicles = [];
+  if (!Array.isArray(companies)) companies = [];
+  if (!settings || typeof settings !== "object") settings = {};
+
+  shifts = shifts.map(normalizeShift);
+  vehicles = normalizeVehicles(vehicles);
+  companies = companies.map(normalizeCompany);
+  settings = normalizeSettings(settings);
+
+  if (from < DATA_MODEL_VERSION) {
+    console.info(`Migrated data model: v${from} -> v${DATA_MODEL_VERSION}`);
+  }
+}
+
+migrateData();
+saveAll();
 
 
 function setSummaryTab(which) {
@@ -139,6 +259,10 @@ function ensureDefaultCompany() {
     },
     contactName: "",
     contactNumber: "",
+    showVehicleField: true,
+    showTrailerFields: true,
+    showMileageFields: false,
+    vehicleIds: [],
     createdAt: Date.now()
   }];
 
@@ -158,6 +282,60 @@ function getSelectableCompanies() {
 function getCompanyById(id) {
   if (!id) return null;
   return (companies || []).find(c => c.id === id) || null;
+}
+
+function getCompanyAssignedVehicles(companyId) {
+  const c = getCompanyById(companyId);
+  const ids = Array.isArray(c?.vehicleIds) ? c.vehicleIds : [];
+  const allowed = new Set(ids.map(v => String(v || "").toUpperCase().trim()).filter(Boolean));
+  return vehicles
+    .filter(v => allowed.has(v))
+    .slice()
+    .sort((a, b) => a.localeCompare(b));
+}
+
+function ensureVehicleAssignedToCompany(companyId, reg) {
+  const c = getCompanyById(companyId);
+  const value = String(reg || "").toUpperCase().trim();
+  if (!c || !value) return;
+  if (!Array.isArray(c.vehicleIds)) c.vehicleIds = [];
+  if (!c.vehicleIds.includes(value)) c.vehicleIds.push(value);
+}
+
+function getSelectedVehicleIdsFromChecklist() {
+  const wrap = document.getElementById("companyVehicleIdsWrap");
+  if (!wrap) return [];
+  return [...wrap.querySelectorAll("input[type='checkbox'][data-vehicle-id]:checked")]
+    .map(el => String(el.getAttribute("data-vehicle-id") || "").toUpperCase().trim())
+    .filter(Boolean);
+}
+
+function renderCompanyVehicleChecklist(selectedIds = []) {
+  const wrap = document.getElementById("companyVehicleIdsWrap");
+  if (!wrap) return;
+
+  const selected = new Set((Array.isArray(selectedIds) ? selectedIds : [])
+    .map(v => String(v || "").toUpperCase().trim())
+    .filter(Boolean)
+  );
+
+  if (!vehicles.length) {
+    wrap.innerHTML = `<div class="small">No vehicles added yet. Add vehicles on the Vehicles page first.</div>`;
+    return;
+  }
+
+  const rows = vehicles
+    .slice()
+    .sort((a, b) => a.localeCompare(b))
+    .map(v => `
+      <label style="display:flex; align-items:center; gap:10px; margin-top:8px;">
+        <input type="checkbox" data-vehicle-id="${escapeHtml(v)}" ${selected.has(v) ? "checked" : ""}>
+        <span>${escapeHtml(v)}</span>
+      </label>
+    `)
+    .join("");
+
+  wrap.innerHTML = rows;
 }
 
 /* ===============================
@@ -184,6 +362,9 @@ function renderCompanyDropdowns(selectedId = "") {
   if (selectedId) sel.value = selectedId;
   else if (storedDefault && selectable.some(c => c.id === storedDefault)) sel.value = storedDefault;
   else if (selectable.length) sel.value = selectable[0].id;
+
+  applyCompanyShiftEntryVisibility(sel.value);
+  renderVehicleMenuOptions(document.getElementById("vehicle")?.value || "");
 }
 
 /* ===============================
@@ -229,6 +410,8 @@ function renderCompanies() {
           Min paid shift: ${Number(c.minPaidShiftHours || 0).toFixed(2)} hrs<br>
           OT: Wkday x${Number(c.ot?.weekday || 1).toFixed(2)} • Sat x${Number(c.ot?.saturday || 1).toFixed(2)} • Sun x${Number(c.ot?.sunday || 1).toFixed(2)} • BH x${Number(c.ot?.bankHoliday || 1).toFixed(2)}<br>
           ${escapeHtml(nbText)}<br>
+          Fields: Vehicle ${c.showVehicleField !== false ? "on" : "off"} • Trailers ${c.showTrailerFields !== false ? "on" : "off"} • Mileage ${c.showMileageFields ? "on" : "off"}<br>
+          Assigned vehicles: ${Array.isArray(c.vehicleIds) ? c.vehicleIds.length : 0}<br>
           ${(c.contactName || c.contactNumber) ? `Contact: ${escapeHtml(c.contactName || "")} ${escapeHtml(c.contactNumber || "")}` : ""}
         </div>
 
@@ -294,6 +477,11 @@ function addOrUpdateCompany() {
       start: document.getElementById("nightBonusStart")?.value || "22:00",
       end: document.getElementById("nightBonusEnd")?.value || "06:00"
     },
+
+    showVehicleField: !!document.getElementById("showVehicleField")?.checked,
+    showTrailerFields: !!document.getElementById("showTrailerFields")?.checked,
+    showMileageFields: !!document.getElementById("showMileageFields")?.checked,
+    vehicleIds: getSelectedVehicleIdsFromChecklist(),
 
     contactName: (document.getElementById("contactName")?.value || "").trim(),
     contactNumber: (document.getElementById("contactNumber")?.value || "").trim(),
@@ -376,6 +564,16 @@ function editCompany(id) {
   setVal("contactName", c.contactName);
   setVal("contactNumber", c.contactNumber);
 
+  const setCheck = (elId, checked) => {
+    const el = document.getElementById(elId);
+    if (el) el.checked = !!checked;
+  };
+
+  setCheck("showVehicleField", c.showVehicleField !== false);
+  setCheck("showTrailerFields", c.showTrailerFields !== false);
+  setCheck("showMileageFields", !!c.showMileageFields);
+  renderCompanyVehicleChecklist(Array.isArray(c.vehicleIds) ? c.vehicleIds : []);
+
   // If your companies page uses a collapsible form, open it automatically when editing
   if (typeof openCompanyForm === "function") openCompanyForm();
 }
@@ -446,6 +644,11 @@ function resetCompanyForm() {
   if (document.getElementById("nightBonusAmount")) document.getElementById("nightBonusAmount").value = 0.5;
   if (document.getElementById("nightBonusStart")) document.getElementById("nightBonusStart").value = "22:00";
   if (document.getElementById("nightBonusEnd")) document.getElementById("nightBonusEnd").value = "06:00";
+
+  if (document.getElementById("showVehicleField")) document.getElementById("showVehicleField").checked = true;
+  if (document.getElementById("showTrailerFields")) document.getElementById("showTrailerFields").checked = true;
+  if (document.getElementById("showMileageFields")) document.getElementById("showMileageFields").checked = false;
+  renderCompanyVehicleChecklist([]);
   
   updateCompanyFormVisibility();
 }
@@ -458,6 +661,7 @@ function loadSettings() {
   if (!document.getElementById("baseRate")) return;
 
   document.getElementById("defaultStart").value = settings.defaultStart;
+  document.getElementById("defaultFinish").value = settings.defaultFinish || "";
   document.getElementById("baseRate").value = settings.baseRate;
   document.getElementById("baseHours").value = settings.baseHours;
   document.getElementById("otWeekday").value = settings.otWeekday;
@@ -468,6 +672,7 @@ function loadSettings() {
 
 function saveSettings() {
   settings.defaultStart = document.getElementById("defaultStart")?.value || "";
+  settings.defaultFinish = document.getElementById("defaultFinish")?.value || "";
   settings.baseRate = Number(document.getElementById("baseRate")?.value) || 0;
   settings.baseHours = Number(document.getElementById("baseHours")?.value) || 0;
   settings.otWeekday = Number(document.getElementById("otWeekday")?.value) || 1;
@@ -499,7 +704,12 @@ function addVehicle() {
 
 function deleteVehicle(i) {
   if (!Number.isInteger(i) || i < 0 || i >= vehicles.length) return;
+  const removed = vehicles[i];
   vehicles.splice(i, 1);
+  companies = companies.map(c => ({
+    ...c,
+    vehicleIds: Array.isArray(c.vehicleIds) ? c.vehicleIds.filter(v => v !== removed) : []
+  }));
   saveAll();
   renderVehicles();
 }
@@ -531,20 +741,26 @@ function renderVehicles() {
 
   // Keep combobox suggestions in sync on enter-shift page.
   renderVehicleMenuOptions((document.getElementById("vehicle")?.value || ""));
+
+  // Keep company vehicle assignment checklist in sync on companies page.
+  const selectedIds = getSelectedVehicleIdsFromChecklist();
+  renderCompanyVehicleChecklist(selectedIds);
 }
 
 function renderVehicleMenuOptions(filterText = "") {
   const menu = document.getElementById("vehicleMenu");
   if (!menu) return;
 
+  const companyId = document.getElementById("company")?.value || "";
+  const source = companyId ? getCompanyAssignedVehicles(companyId) : vehicles.slice();
   const filter = String(filterText || "").toUpperCase().trim();
-  const options = vehicles
+  const options = source
     .slice()
     .sort((a, b) => a.localeCompare(b))
     .filter(v => !filter || v.includes(filter));
 
   if (!options.length) {
-    menu.innerHTML = `<div class="combo-empty">No matches. Type a new registration.</div>`;
+    menu.innerHTML = `<div class="combo-empty">No assigned vehicles. Type a new registration.</div>`;
     return;
   }
 
@@ -557,6 +773,7 @@ function initVehicleCombobox() {
   const input = document.getElementById("vehicle");
   const menu = document.getElementById("vehicleMenu");
   const wrap = document.getElementById("vehicleComboWrap");
+  const companyEl = document.getElementById("company");
   if (!input || !menu || !wrap) return;
 
   const openMenu = () => {
@@ -598,6 +815,13 @@ function initVehicleCombobox() {
   document.addEventListener("click", (e) => {
     if (!wrap.contains(e.target)) closeMenu();
   });
+
+  if (companyEl) {
+    companyEl.addEventListener("change", () => {
+      applyCompanyShiftEntryVisibility(companyEl.value);
+      renderVehicleMenuOptions(input.value);
+    });
+  }
 }
 
 /* ===============================
@@ -736,15 +960,102 @@ function applyDefaultsToShiftEntry({ force = false } = {}) {
     startEl.value = settings.defaultStart;
   }
 
+  const finishEl = document.getElementById("finish");
+  if (finishEl && (force || !finishEl.value) && settings?.defaultFinish) {
+    finishEl.value = settings.defaultFinish;
+  }
+
   const dateEl = document.getElementById("date");
   if (dateEl && (force || !dateEl.value)) {
-    dateEl.value = new Date().toISOString().slice(0, 10);
+    const shiftType = document.getElementById("shiftType")?.value || "day";
+    dateEl.value = getDefaultDateForShiftType(shiftType);
   }
 
   const companyEl = document.getElementById("company");
   if (companyEl && (force || !companyEl.value)) {
     renderCompanyDropdowns();
   }
+}
+
+function applyCompanyShiftEntryVisibility(companyId) {
+  const vehicleRow = document.getElementById("shiftVehicleRow");
+  const trailerRows = document.getElementById("shiftTrailerRows");
+  const mileageRows = document.getElementById("shiftMileageRows");
+  if (!vehicleRow && !trailerRows && !mileageRows) return;
+
+  const c = getCompanyById(companyId);
+  const showVehicle = c ? (c.showVehicleField !== false) : true;
+  const showTrailers = c ? (c.showTrailerFields !== false) : true;
+  const showMileage = c ? !!c.showMileageFields : false;
+
+  if (vehicleRow) {
+    vehicleRow.hidden = !showVehicle;
+    if (!showVehicle) {
+      const vehicleInput = document.getElementById("vehicle");
+      if (vehicleInput) vehicleInput.value = "";
+    }
+  }
+
+  if (trailerRows) {
+    trailerRows.hidden = !showTrailers;
+    if (!showTrailers) {
+      const t1 = document.getElementById("trailer1");
+      const t2 = document.getElementById("trailer2");
+      if (t1) t1.value = "";
+      if (t2) t2.value = "";
+    }
+  }
+
+  if (mileageRows) {
+    mileageRows.hidden = !showMileage;
+    if (!showMileage) {
+      const startMileage = document.getElementById("startMileage");
+      const finishMileage = document.getElementById("finishMileage");
+      const mileageDone = document.getElementById("mileageDone");
+      if (startMileage) startMileage.value = "";
+      if (finishMileage) finishMileage.value = "";
+      if (mileageDone) mileageDone.value = "";
+    } else {
+      updateMileageDone();
+    }
+  }
+}
+
+function getDefaultDateForShiftType(type) {
+  const d = new Date();
+  if (type === "night") d.setDate(d.getDate() - 1);
+  return d.toISOString().slice(0, 10);
+}
+
+function updateMileageDone() {
+  const startEl = document.getElementById("startMileage");
+  const finishEl = document.getElementById("finishMileage");
+  const doneEl = document.getElementById("mileageDone");
+  if (!startEl || !finishEl || !doneEl) return;
+
+  const start = Number(startEl.value || 0);
+  const finish = Number(finishEl.value || 0);
+  const miles = Math.max(0, finish - start);
+  doneEl.value = (startEl.value || finishEl.value) ? String(miles) : "";
+}
+
+function initShiftTypeBehavior() {
+  const shiftTypeEl = document.getElementById("shiftType");
+  const dateEl = document.getElementById("date");
+  if (!shiftTypeEl || !dateEl) return;
+
+  shiftTypeEl.addEventListener("change", () => {
+    if (editingIndex !== null) return;
+    dateEl.value = getDefaultDateForShiftType(shiftTypeEl.value);
+  });
+}
+
+function initMileageBehavior() {
+  const startEl = document.getElementById("startMileage");
+  const finishEl = document.getElementById("finishMileage");
+  if (!startEl || !finishEl) return;
+  startEl.addEventListener("input", updateMileageDone);
+  finishEl.addEventListener("input", updateMileageDone);
 }
 
 /* ===============================
@@ -766,12 +1077,23 @@ function addOrUpdateShift() {
   const companyId = (companyEl.value || "").trim();
   if (!companyId) return alert("Select a company");
 
-  const vehicleRaw = document.getElementById("vehicle")?.value || "";
+  const company = getCompanyById(companyId);
+  const showVehicle = company ? (company.showVehicleField !== false) : true;
+  const showTrailers = company ? (company.showTrailerFields !== false) : true;
+  const showMileage = company ? !!company.showMileageFields : false;
+
+  const vehicleRaw = showVehicle ? (document.getElementById("vehicle")?.value || "") : "";
   const vehicle = vehicleRaw.toUpperCase().trim();
+  const shiftType = document.getElementById("shiftType")?.value || "day";
+  const startMileage = showMileage ? Number(document.getElementById("startMileage")?.value || 0) : 0;
+  const finishMileage = showMileage ? Number(document.getElementById("finishMileage")?.value || 0) : 0;
+  const mileage = showMileage ? Math.max(0, finishMileage - startMileage) : 0;
+  const defectsNotes = document.getElementById("defects")?.value || "";
 
   if (vehicle && !vehicles.includes(vehicle)) {
     vehicles.push(vehicle);
   }
+  if (vehicle) ensureVehicleAssignedToCompany(companyId, vehicle);
 
   const shift = {
     id: (editingIndex !== null && shifts[editingIndex]?.id) ? shifts[editingIndex].id : generateShiftId(),
@@ -780,10 +1102,15 @@ function addOrUpdateShift() {
 
     start: document.getElementById("start")?.value || "",
     finish: document.getElementById("finish")?.value || "",
+    shiftType,
     vehicle,
-    trailer1: document.getElementById("trailer1")?.value || "",
-    trailer2: document.getElementById("trailer2")?.value || "",
-    defects: document.getElementById("defects")?.value || "",
+    trailer1: showTrailers ? (document.getElementById("trailer1")?.value || "") : "",
+    trailer2: showTrailers ? (document.getElementById("trailer2")?.value || "") : "",
+    startMileage,
+    finishMileage,
+    mileage,
+    defects: defectsNotes,
+    notes: defectsNotes,
     annualLeave: !!document.getElementById("annualLeave")?.checked,
     bankHoliday: !!document.getElementById("bankHoliday")?.checked,
 
@@ -824,13 +1151,18 @@ function clearForm() {
     if (el.type === "checkbox") el.checked = false;
     else if (el.type !== "file") el.value = "";
   });
+  const shiftType = document.getElementById("shiftType");
+  if (shiftType) shiftType.value = "day";
 
   const vehicle = document.getElementById("vehicle");
   if (vehicle) vehicle.value = "";
+  const mileageDone = document.getElementById("mileageDone");
+  if (mileageDone) mileageDone.value = "";
 
   // keep company selection if still selected; otherwise re-pick default
   const company = document.getElementById("company");
   if (!company || !company.value) renderCompanyDropdowns();
+  else applyCompanyShiftEntryVisibility(company.value);
 
   // re-apply defaults (this fixes your “start time blank after reset” issue)
   applyDefaultsToShiftEntry();
@@ -1462,7 +1794,7 @@ function getWeekStartMonday(dateStr) {
 
 function formatShiftLine(s, index) {
   const companyName = getCompanyById(s.companyId)?.name || "Unknown Company";
-  const flags = [s.annualLeave ? "AL" : "", s.bankHoliday ? "BH" : ""].filter(Boolean).join(" ");
+  const flags = [s.shiftType === "night" ? "NIGHT" : "", s.annualLeave ? "AL" : "", s.bankHoliday ? "BH" : ""].filter(Boolean).join(" ");
 
   const defects = (s.defects || "").trim();
   const defectsPreview = defects.length > 80 ? defects.slice(0, 80) + "…" : defects;
@@ -1476,9 +1808,10 @@ function formatShiftLine(s, index) {
         ${s.vehicle ? `<div>Vehicle: ${escapeHtml(s.vehicle)}</div>` : ""}
         ${s.trailer1 ? `<div>Trailer 1: ${escapeHtml(s.trailer1)}</div>` : ""}
         ${s.trailer2 ? `<div>Trailer 2: ${escapeHtml(s.trailer2)}</div>` : ""}
+        ${(Number(s.mileage || 0) > 0) ? `<div>Mileage: ${Number(s.startMileage || 0).toFixed(0)} → ${Number(s.finishMileage || 0).toFixed(0)} (${Number(s.mileage || 0).toFixed(0)} miles)</div>` : ""}
         <div>Worked: ${Number(s.worked || 0).toFixed(2)} • Breaks: ${Number(s.breaks || 0).toFixed(2)} • Paid: ${Number(s.paid || 0).toFixed(2)}</div>
-        ${defects ? `<div>Defects: ${escapeHtml(defectsPreview)}</div>` : ""}
-        ${defects && defects.length > 80 ? `<details style="margin-top:8px;"><summary class="small">View full defects</summary><div style="margin-top:8px;">${escapeHtml(defects).replaceAll("\n","<br>")}</div></details>` : ""}
+        ${defects ? `<div>Defects/Notes: ${escapeHtml(defectsPreview)}</div>` : ""}
+        ${defects && defects.length > 80 ? `<details style="margin-top:8px;"><summary class="small">View full defects/notes</summary><div style="margin-top:8px;">${escapeHtml(defects).replaceAll("\n","<br>")}</div></details>` : ""}
       </div>
 
       <div style="margin-top:10px; display:flex; gap:10px; flex-wrap:wrap;">
@@ -1575,13 +1908,19 @@ function loadShiftForEditingIfRequested() {
   setVal("date", s.date);
   setVal("start", s.start);
   setVal("finish", s.finish);
+  setVal("shiftType", s.shiftType || "day");
   setVal("vehicle", s.vehicle);
   setVal("trailer1", s.trailer1);
   setVal("trailer2", s.trailer2);
+  setVal("startMileage", s.startMileage || 0);
+  setVal("finishMileage", s.finishMileage || 0);
+  setVal("mileageDone", s.mileage || 0);
   setVal("company", s.companyId);
+  applyCompanyShiftEntryVisibility(s.companyId);
+  renderVehicleMenuOptions(s.vehicle || "");
 
   const defectsEl = document.getElementById("defects");
-  if (defectsEl) defectsEl.value = s.defects ?? "";
+  if (defectsEl) defectsEl.value = (s.defects ?? s.notes ?? "");
 
   setCheck("annualLeave", s.annualLeave);
   setCheck("bankHoliday", s.bankHoliday);
@@ -1593,7 +1932,7 @@ function loadShiftForEditingIfRequested() {
 
 function downloadBackup() {
   const data = {
-    version: 2,
+    version: DATA_MODEL_VERSION,
     exportedAt: new Date().toISOString(),
     shifts,
     vehicles,
@@ -1618,12 +1957,14 @@ function restoreBackup(event) {
   reader.onload = function (e) {
     try {
       const data = JSON.parse(e.target.result);
+      const backupVersion = Number(data?.version || 1);
 
       shifts = Array.isArray(data.shifts) ? data.shifts : [];
       vehicles = Array.isArray(data.vehicles) ? data.vehicles : [];
       companies = Array.isArray(data.companies) ? data.companies : companies;
       settings = (data.settings && typeof data.settings === "object") ? data.settings : settings;
 
+      migrateData(backupVersion);
       saveAll();
 
       alert("Backup restored successfully.");
@@ -1988,6 +2329,8 @@ document.addEventListener("DOMContentLoaded", () => {
 
   // Shift entry page defaults + editing
   loadShiftForEditingIfRequested();
+  initShiftTypeBehavior();
+  initMileageBehavior();
   applyDefaultsToShiftEntry();
 
   // Summary page
