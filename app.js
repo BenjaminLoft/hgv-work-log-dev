@@ -2647,6 +2647,7 @@ function renderAll() {
 ================================ */
 
 document.addEventListener("DOMContentLoaded", () => {
+  initNavMenu();
   ensureDefaultCompany();
 
   // Basic lists
@@ -2835,4 +2836,35 @@ async function checkForUpdates() {
       setUpdateStatus("You're up to date.");
     }
   }, 2000);
+}
+
+function initNavMenu() {
+  const nav = document.querySelector(".nav");
+  const btn = document.getElementById("navMenuBtn");
+  const menu = document.getElementById("navMenu");
+  if (!nav || !btn || !menu) return;
+
+  const closeMenu = () => {
+    menu.hidden = true;
+    btn.setAttribute("aria-expanded", "false");
+  };
+  const openMenu = () => {
+    menu.hidden = false;
+    btn.setAttribute("aria-expanded", "true");
+  };
+  const toggleMenu = () => {
+    if (menu.hidden) openMenu();
+    else closeMenu();
+  };
+
+  btn.addEventListener("click", toggleMenu);
+  menu.addEventListener("click", (e) => {
+    if (e.target.closest("a")) closeMenu();
+  });
+  document.addEventListener("click", (e) => {
+    if (!nav.contains(e.target)) closeMenu();
+  });
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape") closeMenu();
+  });
 }
