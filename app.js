@@ -7,19 +7,26 @@
    STORAGE
 ================================ */
 
-let shifts = JSON.parse(localStorage.getItem("shifts")) || [];
-let vehicles = JSON.parse(localStorage.getItem("vehicles")) || [];
-let companies = JSON.parse(localStorage.getItem("companies")) || [];
-
-let settings = JSON.parse(localStorage.getItem("settings")) || {
+const DATA_MODEL_VERSION = 3;
+const DATA_VERSION_KEY = "dataVersion";
+const DEFAULT_SETTINGS = {
   defaultStart: "",
+  defaultFinish: "",
   baseRate: 17.75,
   baseHours: 45,
   otWeekday: 1.25,
   otSaturday: 1.25,
   otSunday: 1.5,
-  otBankHoliday: 2
+  otBankHoliday: 2,
+  annualLeaveAllowance: 0,
+  summaryPeriodMode: "month"
 };
+
+let shifts = JSON.parse(localStorage.getItem("shifts")) || [];
+let vehicles = JSON.parse(localStorage.getItem("vehicles")) || [];
+let companies = JSON.parse(localStorage.getItem("companies")) || [];
+
+let settings = JSON.parse(localStorage.getItem("settings")) || { ...DEFAULT_SETTINGS };
 
 let editingIndex = null;
 
@@ -58,6 +65,7 @@ function saveAll() {
   localStorage.setItem("vehicles", JSON.stringify(vehicles));
   localStorage.setItem("companies", JSON.stringify(companies));
   localStorage.setItem("settings", JSON.stringify(settings));
+  localStorage.setItem(DATA_VERSION_KEY, String(DATA_MODEL_VERSION));
 }
 
 function generateCompanyId() {
@@ -67,6 +75,118 @@ function generateCompanyId() {
 function generateShiftId() {
   return "shf_" + Math.random().toString(36).slice(2, 10);
 }
+
+function getStoredDataVersion() {
+  const raw = Number(localStorage.getItem(DATA_VERSION_KEY));
+  return Number.isFinite(raw) && raw > 0 ? raw : 1;
+}
+
+function normalizeSettings(src) {
+  const out = { ...DEFAULT_SETTINGS, ...(src && typeof src === "object" ? src : {}) };
+  out.baseRate = Number(out.baseRate || 0);
+  out.baseHours = Number(out.baseHours || 0);
+  out.otWeekday = Number(out.otWeekday || 1);
+  out.otSaturday = Number(out.otSaturday || 1);
+  out.otSunday = Number(out.otSunday || 1);
+  out.otBankHoliday = Number(out.otBankHoliday || 1);
+  out.annualLeaveAllowance = Number(out.annualLeaveAllowance || 0);
+  return out;
+}
+
+function normalizeVehicles(src) {
+  if (!Array.isArray(src)) return [];
+  return [...new Set(src
+    .map(v => String(v || "").toUpperCase().trim())
+    .filter(Boolean)
+  )];
+}
+
+function normalizeCompany(src) {
+  const c = (src && typeof src === "object") ? src : {};
+  const nightBonus = c.nightBonus || {};
+
+  return {
+    ...c,
+    id: String(c.id || generateCompanyId()),
+    name: String(c.name || "Company"),
+    baseRate: Number(c.baseRate || 0),
+    payMode: (c.payMode === "daily") ? "daily" : "weekly",
+    baseWeeklyHours: Number(c.baseWeeklyHours || 0),
+    baseDailyPaidHours: Number(c.baseDailyPaidHours || 0),
+    standardShiftLength: Number(c.standardShiftLength || 0),
+    dailyOTAfterWorkedHours: Number(c.dailyOTAfterWorkedHours || 0),
+    minPaidShiftHours: Number(c.minPaidShiftHours || 0),
+    nightBonus: {
+      mode: nightBonus.mode || "none",
+      amount: Number(nightBonus.amount || 0),
+      start: nightBonus.start || "22:00",
+      end: nightBonus.end || "06:00"
+    },
+    ot: {
+      weekday: Number(c.ot?.weekday || 1),
+      saturday: Number(c.ot?.saturday || 1),
+      sunday: Number(c.ot?.sunday || 1),
+      bankHoliday: Number(c.ot?.bankHoliday || 1)
+    },
+    showVehicleField: (c.showVehicleField !== false),
+    showTrailerFields: (c.showTrailerFields !== false),
+    showMileageFields: !!c.showMileageFields,
+    bonusRules: Array.isArray(c.bonusRules) ? c.bonusRules : [],
+    vehicleIds: Array.isArray(c.vehicleIds) ? c.vehicleIds : []
+  };
+}
+
+function normalizeShift(src) {
+  const s = (src && typeof src === "object") ? src : {};
+  const expenses = s.expenses || {};
+
+  return {
+    ...s,
+    id: String(s.id || generateShiftId()),
+    companyId: String(s.companyId || ""),
+    date: String(s.date || ""),
+    start: String(s.start || ""),
+    finish: String(s.finish || ""),
+    vehicle: String(s.vehicle || "").toUpperCase().trim(),
+    trailer1: String(s.trailer1 || ""),
+    trailer2: String(s.trailer2 || ""),
+    defects: String(s.defects || s.notes || ""),
+    notes: String(s.notes || s.defects || ""),
+    annualLeave: !!s.annualLeave,
+    sickDay: !!s.sickDay,
+    bankHoliday: !!s.bankHoliday,
+    startMileage: Number(s.startMileage || 0),
+    finishMileage: Number(s.finishMileage || 0),
+    mileage: Number(s.mileage || Math.max(0, Number(s.finishMileage || 0) - Number(s.startMileage || 0))),
+    shiftType: s.shiftType === "night" ? "night" : "day",
+    expenses: {
+      parking: Number(expenses.parking || 0),
+      tolls: Number(expenses.tolls || 0)
+    },
+    nightOutCount: Number(s.nightOutCount || 0),
+    nightOutPay: Number(s.nightOutPay || 0)
+  };
+}
+
+function migrateData(sourceVersion = getStoredDataVersion()) {
+  const from = Number(sourceVersion || 1);
+  if (!Array.isArray(shifts)) shifts = [];
+  if (!Array.isArray(vehicles)) vehicles = [];
+  if (!Array.isArray(companies)) companies = [];
+  if (!settings || typeof settings !== "object") settings = {};
+
+  shifts = shifts.map(normalizeShift);
+  vehicles = normalizeVehicles(vehicles);
+  companies = companies.map(normalizeCompany);
+  settings = normalizeSettings(settings);
+
+  if (from < DATA_MODEL_VERSION) {
+    console.info(`Migrated data model: v${from} -> v${DATA_MODEL_VERSION}`);
+  }
+}
+
+migrateData();
+saveAll();
 
 
 function setSummaryTab(which) {
@@ -1593,7 +1713,7 @@ function loadShiftForEditingIfRequested() {
 
 function downloadBackup() {
   const data = {
-    version: 2,
+    version: DATA_MODEL_VERSION,
     exportedAt: new Date().toISOString(),
     shifts,
     vehicles,
@@ -1618,12 +1738,14 @@ function restoreBackup(event) {
   reader.onload = function (e) {
     try {
       const data = JSON.parse(e.target.result);
+      const backupVersion = Number(data?.version || 1);
 
       shifts = Array.isArray(data.shifts) ? data.shifts : [];
       vehicles = Array.isArray(data.vehicles) ? data.vehicles : [];
       companies = Array.isArray(data.companies) ? data.companies : companies;
       settings = (data.settings && typeof data.settings === "object") ? data.settings : settings;
 
+      migrateData(backupVersion);
       saveAll();
 
       alert("Backup restored successfully.");
