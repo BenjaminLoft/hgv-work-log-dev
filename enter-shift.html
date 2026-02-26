@@ -43,17 +43,21 @@
     <label>Finish Time</label>
     <input type="time" id="finish">
 
-    <label>Vehicle</label>
-    <div class="combo-wrap" id="vehicleComboWrap">
-      <input type="text" id="vehicle" placeholder="Registration" autocomplete="off">
-      <div id="vehicleMenu" class="combo-menu" hidden></div>
+    <div id="shiftVehicleRow">
+      <label>Vehicle</label>
+      <div class="combo-wrap" id="vehicleComboWrap">
+        <input type="text" id="vehicle" placeholder="Registration" autocomplete="off">
+        <div id="vehicleMenu" class="combo-menu" hidden></div>
+      </div>
     </div>
 
-    <label>Trailer 1</label>
-    <input type="text" id="trailer1">
+    <div id="shiftTrailerRows">
+      <label>Trailer 1</label>
+      <input type="text" id="trailer1">
 
-    <label>Trailer 2</label>
-    <input type="text" id="trailer2">
+      <label>Trailer 2</label>
+      <input type="text" id="trailer2">
+    </div>
 
     <label>Defects</label>
     <textarea id="defects"></textarea>

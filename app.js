@@ -259,6 +259,10 @@ function ensureDefaultCompany() {
     },
     contactName: "",
     contactNumber: "",
+    showVehicleField: true,
+    showTrailerFields: true,
+    showMileageFields: false,
+    vehicleIds: [],
     createdAt: Date.now()
   }];
 
@@ -278,6 +282,60 @@ function getSelectableCompanies() {
 function getCompanyById(id) {
   if (!id) return null;
   return (companies || []).find(c => c.id === id) || null;
+}
+
+function getCompanyAssignedVehicles(companyId) {
+  const c = getCompanyById(companyId);
+  const ids = Array.isArray(c?.vehicleIds) ? c.vehicleIds : [];
+  const allowed = new Set(ids.map(v => String(v || "").toUpperCase().trim()).filter(Boolean));
+  return vehicles
+    .filter(v => allowed.has(v))
+    .slice()
+    .sort((a, b) => a.localeCompare(b));
+}
+
+function ensureVehicleAssignedToCompany(companyId, reg) {
+  const c = getCompanyById(companyId);
+  const value = String(reg || "").toUpperCase().trim();
+  if (!c || !value) return;
+  if (!Array.isArray(c.vehicleIds)) c.vehicleIds = [];
+  if (!c.vehicleIds.includes(value)) c.vehicleIds.push(value);
+}
+
+function getSelectedVehicleIdsFromChecklist() {
+  const wrap = document.getElementById("companyVehicleIdsWrap");
+  if (!wrap) return [];
+  return [...wrap.querySelectorAll("input[type='checkbox'][data-vehicle-id]:checked")]
+    .map(el => String(el.getAttribute("data-vehicle-id") || "").toUpperCase().trim())
+    .filter(Boolean);
+}
+
+function renderCompanyVehicleChecklist(selectedIds = []) {
+  const wrap = document.getElementById("companyVehicleIdsWrap");
+  if (!wrap) return;
+
+  const selected = new Set((Array.isArray(selectedIds) ? selectedIds : [])
+    .map(v => String(v || "").toUpperCase().trim())
+    .filter(Boolean)
+  );
+
+  if (!vehicles.length) {
+    wrap.innerHTML = `<div class="small">No vehicles added yet. Add vehicles on the Vehicles page first.</div>`;
+    return;
+  }
+
+  const rows = vehicles
+    .slice()
+    .sort((a, b) => a.localeCompare(b))
+    .map(v => `
+      <label style="display:flex; align-items:center; gap:10px; margin-top:8px;">
+        <input type="checkbox" data-vehicle-id="${escapeHtml(v)}" ${selected.has(v) ? "checked" : ""}>
+        <span>${escapeHtml(v)}</span>
+      </label>
+    `)
+    .join("");
+
+  wrap.innerHTML = rows;
 }
 
 /* ===============================
@@ -304,6 +362,9 @@ function renderCompanyDropdowns(selectedId = "") {
   if (selectedId) sel.value = selectedId;
   else if (storedDefault && selectable.some(c => c.id === storedDefault)) sel.value = storedDefault;
   else if (selectable.length) sel.value = selectable[0].id;
+
+  applyCompanyShiftEntryVisibility(sel.value);
+  renderVehicleMenuOptions(document.getElementById("vehicle")?.value || "");
 }
 
 /* ===============================
@@ -349,6 +410,8 @@ function renderCompanies() {
           Min paid shift: ${Number(c.minPaidShiftHours || 0).toFixed(2)} hrs<br>
           OT: Wkday x${Number(c.ot?.weekday || 1).toFixed(2)} • Sat x${Number(c.ot?.saturday || 1).toFixed(2)} • Sun x${Number(c.ot?.sunday || 1).toFixed(2)} • BH x${Number(c.ot?.bankHoliday || 1).toFixed(2)}<br>
           ${escapeHtml(nbText)}<br>
+          Fields: Vehicle ${c.showVehicleField !== false ? "on" : "off"} • Trailers ${c.showTrailerFields !== false ? "on" : "off"} • Mileage ${c.showMileageFields ? "on" : "off"}<br>
+          Assigned vehicles: ${Array.isArray(c.vehicleIds) ? c.vehicleIds.length : 0}<br>
           ${(c.contactName || c.contactNumber) ? `Contact: ${escapeHtml(c.contactName || "")} ${escapeHtml(c.contactNumber || "")}` : ""}
         </div>
 
@@ -414,6 +477,11 @@ function addOrUpdateCompany() {
       start: document.getElementById("nightBonusStart")?.value || "22:00",
       end: document.getElementById("nightBonusEnd")?.value || "06:00"
     },
+
+    showVehicleField: !!document.getElementById("showVehicleField")?.checked,
+    showTrailerFields: !!document.getElementById("showTrailerFields")?.checked,
+    showMileageFields: !!document.getElementById("showMileageFields")?.checked,
+    vehicleIds: getSelectedVehicleIdsFromChecklist(),
 
     contactName: (document.getElementById("contactName")?.value || "").trim(),
     contactNumber: (document.getElementById("contactNumber")?.value || "").trim(),
@@ -496,6 +564,16 @@ function editCompany(id) {
   setVal("contactName", c.contactName);
   setVal("contactNumber", c.contactNumber);
 
+  const setCheck = (elId, checked) => {
+    const el = document.getElementById(elId);
+    if (el) el.checked = !!checked;
+  };
+
+  setCheck("showVehicleField", c.showVehicleField !== false);
+  setCheck("showTrailerFields", c.showTrailerFields !== false);
+  setCheck("showMileageFields", !!c.showMileageFields);
+  renderCompanyVehicleChecklist(Array.isArray(c.vehicleIds) ? c.vehicleIds : []);
+
   // If your companies page uses a collapsible form, open it automatically when editing
   if (typeof openCompanyForm === "function") openCompanyForm();
 }
@@ -566,6 +644,11 @@ function resetCompanyForm() {
   if (document.getElementById("nightBonusAmount")) document.getElementById("nightBonusAmount").value = 0.5;
   if (document.getElementById("nightBonusStart")) document.getElementById("nightBonusStart").value = "22:00";
   if (document.getElementById("nightBonusEnd")) document.getElementById("nightBonusEnd").value = "06:00";
+
+  if (document.getElementById("showVehicleField")) document.getElementById("showVehicleField").checked = true;
+  if (document.getElementById("showTrailerFields")) document.getElementById("showTrailerFields").checked = true;
+  if (document.getElementById("showMileageFields")) document.getElementById("showMileageFields").checked = false;
+  renderCompanyVehicleChecklist([]);
   
   updateCompanyFormVisibility();
 }
@@ -619,7 +702,12 @@ function addVehicle() {
 
 function deleteVehicle(i) {
   if (!Number.isInteger(i) || i < 0 || i >= vehicles.length) return;
+  const removed = vehicles[i];
   vehicles.splice(i, 1);
+  companies = companies.map(c => ({
+    ...c,
+    vehicleIds: Array.isArray(c.vehicleIds) ? c.vehicleIds.filter(v => v !== removed) : []
+  }));
   saveAll();
   renderVehicles();
 }
@@ -651,20 +739,26 @@ function renderVehicles() {
 
   // Keep combobox suggestions in sync on enter-shift page.
   renderVehicleMenuOptions((document.getElementById("vehicle")?.value || ""));
+
+  // Keep company vehicle assignment checklist in sync on companies page.
+  const selectedIds = getSelectedVehicleIdsFromChecklist();
+  renderCompanyVehicleChecklist(selectedIds);
 }
 
 function renderVehicleMenuOptions(filterText = "") {
   const menu = document.getElementById("vehicleMenu");
   if (!menu) return;
 
+  const companyId = document.getElementById("company")?.value || "";
+  const source = companyId ? getCompanyAssignedVehicles(companyId) : vehicles.slice();
   const filter = String(filterText || "").toUpperCase().trim();
-  const options = vehicles
+  const options = source
     .slice()
     .sort((a, b) => a.localeCompare(b))
     .filter(v => !filter || v.includes(filter));
 
   if (!options.length) {
-    menu.innerHTML = `<div class="combo-empty">No matches. Type a new registration.</div>`;
+    menu.innerHTML = `<div class="combo-empty">No assigned vehicles. Type a new registration.</div>`;
     return;
   }
 
@@ -677,6 +771,7 @@ function initVehicleCombobox() {
   const input = document.getElementById("vehicle");
   const menu = document.getElementById("vehicleMenu");
   const wrap = document.getElementById("vehicleComboWrap");
+  const companyEl = document.getElementById("company");
   if (!input || !menu || !wrap) return;
 
   const openMenu = () => {
@@ -718,6 +813,13 @@ function initVehicleCombobox() {
   document.addEventListener("click", (e) => {
     if (!wrap.contains(e.target)) closeMenu();
   });
+
+  if (companyEl) {
+    companyEl.addEventListener("change", () => {
+      applyCompanyShiftEntryVisibility(companyEl.value);
+      renderVehicleMenuOptions(input.value);
+    });
+  }
 }
 
 /* ===============================
@@ -867,6 +969,34 @@ function applyDefaultsToShiftEntry({ force = false } = {}) {
   }
 }
 
+function applyCompanyShiftEntryVisibility(companyId) {
+  const vehicleRow = document.getElementById("shiftVehicleRow");
+  const trailerRows = document.getElementById("shiftTrailerRows");
+  if (!vehicleRow && !trailerRows) return;
+
+  const c = getCompanyById(companyId);
+  const showVehicle = c ? (c.showVehicleField !== false) : true;
+  const showTrailers = c ? (c.showTrailerFields !== false) : true;
+
+  if (vehicleRow) {
+    vehicleRow.hidden = !showVehicle;
+    if (!showVehicle) {
+      const vehicleInput = document.getElementById("vehicle");
+      if (vehicleInput) vehicleInput.value = "";
+    }
+  }
+
+  if (trailerRows) {
+    trailerRows.hidden = !showTrailers;
+    if (!showTrailers) {
+      const t1 = document.getElementById("trailer1");
+      const t2 = document.getElementById("trailer2");
+      if (t1) t1.value = "";
+      if (t2) t2.value = "";
+    }
+  }
+}
+
 /* ===============================
    ADD / UPDATE SHIFT
 ================================ */
@@ -886,12 +1016,17 @@ function addOrUpdateShift() {
   const companyId = (companyEl.value || "").trim();
   if (!companyId) return alert("Select a company");
 
-  const vehicleRaw = document.getElementById("vehicle")?.value || "";
+  const company = getCompanyById(companyId);
+  const showVehicle = company ? (company.showVehicleField !== false) : true;
+  const showTrailers = company ? (company.showTrailerFields !== false) : true;
+
+  const vehicleRaw = showVehicle ? (document.getElementById("vehicle")?.value || "") : "";
   const vehicle = vehicleRaw.toUpperCase().trim();
 
   if (vehicle && !vehicles.includes(vehicle)) {
     vehicles.push(vehicle);
   }
+  if (vehicle) ensureVehicleAssignedToCompany(companyId, vehicle);
 
   const shift = {
     id: (editingIndex !== null && shifts[editingIndex]?.id) ? shifts[editingIndex].id : generateShiftId(),
@@ -901,8 +1036,8 @@ function addOrUpdateShift() {
     start: document.getElementById("start")?.value || "",
     finish: document.getElementById("finish")?.value || "",
     vehicle,
-    trailer1: document.getElementById("trailer1")?.value || "",
-    trailer2: document.getElementById("trailer2")?.value || "",
+    trailer1: showTrailers ? (document.getElementById("trailer1")?.value || "") : "",
+    trailer2: showTrailers ? (document.getElementById("trailer2")?.value || "") : "",
     defects: document.getElementById("defects")?.value || "",
     annualLeave: !!document.getElementById("annualLeave")?.checked,
     bankHoliday: !!document.getElementById("bankHoliday")?.checked,
@@ -951,6 +1086,7 @@ function clearForm() {
   // keep company selection if still selected; otherwise re-pick default
   const company = document.getElementById("company");
   if (!company || !company.value) renderCompanyDropdowns();
+  else applyCompanyShiftEntryVisibility(company.value);
 
   // re-apply defaults (this fixes your “start time blank after reset” issue)
   applyDefaultsToShiftEntry();
@@ -1699,6 +1835,8 @@ function loadShiftForEditingIfRequested() {
   setVal("trailer1", s.trailer1);
   setVal("trailer2", s.trailer2);
   setVal("company", s.companyId);
+  applyCompanyShiftEntryVisibility(s.companyId);
+  renderVehicleMenuOptions(s.vehicle || "");
 
   const defectsEl = document.getElementById("defects");
   if (defectsEl) defectsEl.value = s.defects ?? "";
