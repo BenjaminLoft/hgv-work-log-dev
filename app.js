@@ -970,8 +970,11 @@ function initVehicleCombobox() {
    HOURS + NIGHT HOURS
 ================================ */
 
-function calculateHours(start, finish, isAL, isSick) {
-  if (isAL || isSick) return { worked: 9, breaks: 0, paid: 9 };
+function calculateHours(start, finish, isAL, isSick, leavePaidHours = 9) {
+  if (isAL || isSick) {
+    const paid = clamp0(leavePaidHours || 9);
+    return { worked: paid, breaks: 0, paid };
+  }
 
   if (!start || !finish) return { worked: 0, breaks: 0, paid: 0 };
 
@@ -1254,6 +1257,7 @@ function addOrUpdateShift() {
   const showVehicle = company ? (company.showVehicleField !== false) : true;
   const showTrailers = company ? (company.showTrailerFields !== false) : true;
   const showMileage = company ? !!company.showMileageFields : false;
+  const leavePaidHours = clamp0(company?.standardShiftLength || 9);
 
   const vehicleRaw = showVehicle ? (document.getElementById("vehicle")?.value || "") : "";
   const vehicle = vehicleRaw.toUpperCase().trim();
@@ -1312,7 +1316,7 @@ function addOrUpdateShift() {
   };
 
   // Hours
-  const hrs = calculateHours(shift.start, shift.finish, shift.annualLeave, shift.sickDay);
+  const hrs = calculateHours(shift.start, shift.finish, shift.annualLeave, shift.sickDay, leavePaidHours);
   shift.worked = hrs.worked;
   shift.breaks = hrs.breaks;
   shift.paid = hrs.paid;
@@ -1793,8 +1797,11 @@ function renderCurrentPeriodTiles() {
   if (!weekTiles && !monthTiles) return;
 
   const isSummaryPage = !!document.getElementById("panelWeek");
-  const order = isSummaryPage
-    ? ["worked", "paid", "baseHours", "basePay", "otHours", "otPay", "breaks", "nightPay", "total"]
+  const weekOrder = isSummaryPage
+    ? ["worked", "paid", "baseHours", "basePay", "otHours", "otPay", "breaks", "nightPay", "nightOutPay", "expenseTotal", "total"]
+    : ["worked", "otHours", "basePay", "otPay", "nightPay", "total"];
+  const monthOrder = isSummaryPage
+    ? ["worked", "paid", "baseHours", "basePay", "otHours", "otPay", "breaks", "nightPay", "nightOutPay", "expenseTotal", "total"]
     : ["worked", "otHours", "basePay", "otPay", "nightPay", "total"];
 
   const weekStart = getCurrentWeekStartMonday();
@@ -1806,7 +1813,7 @@ function renderCurrentPeriodTiles() {
   });
 
   const weekResult = processShifts(weekShifts, "overall");
-  renderBreakdownTiles("thisWeekTiles", "", weekResult, order);
+  renderBreakdownTiles("thisWeekTiles", "", weekResult, weekOrder);
 
   let monthShifts = [];
   if (isSummaryPage && getSummaryPeriodMode() === "four_week") {
@@ -1821,7 +1828,21 @@ function renderCurrentPeriodTiles() {
   }
 
   const monthResult = processMonthAsWeeks(monthShifts, "overall");
-  renderBreakdownTiles("thisMonthTiles", "", monthResult, order);
+  renderBreakdownTiles("thisMonthTiles", "", monthResult, monthOrder);
+
+  // Index page: append annual leave taken/remaining under This Month tiles.
+  if (!isSummaryPage && monthTiles) {
+    const stats = getYearlyLeaveStats(new Date().getFullYear());
+    const remaining = Number(stats.remaining || 0);
+    const remainingText = remaining >= 0
+      ? `${remaining.toFixed(0)} days`
+      : `-${Math.abs(remaining).toFixed(0)} days`;
+
+    monthTiles.insertAdjacentHTML("beforeend", `
+      <div class="tile"><div class="label">Leave Taken</div><div class="value">${Number(stats.annualLeaveTaken || 0).toFixed(0)} days</div></div>
+      <div class="tile"><div class="label">Leave Remaining</div><div class="value">${remainingText}</div></div>
+    `);
+  }
 }
 
 function getYearlyLeaveStats(year = new Date().getFullYear()) {
@@ -1972,17 +1993,27 @@ function updateCompanyFormVisibility() {
   const dailyOTRow = document.getElementById("dailyOtFields") || document.getElementById("dailyOTRow");
   const bonusModeWrap = document.getElementById("bonusModeWrap");
   const bonusWindow = document.getElementById("bonusWindow");
+  const bonusModeEl = document.getElementById("bonusMode");
+  const bonusAmountLabel = document.getElementById("bonusAmountLabel");
 
   if (dailyOTRow) {
     dailyOTRow.hidden = (payModeEl?.value !== "daily");
   }
 
   const bonusType = bonusTypeEl?.value || "none";
+  const bonusMode = bonusModeEl?.value || "per_hour";
   if (bonusModeWrap) {
     bonusModeWrap.hidden = (bonusType !== "night_window");
   }
   if (bonusWindow) {
-    bonusWindow.hidden = (bonusType !== "night_window");
+    bonusWindow.hidden = !(bonusType === "night_window" && bonusMode === "per_hour");
+  }
+  if (bonusAmountLabel) {
+    if (bonusType === "night_window" && bonusMode === "per_hour") {
+      bonusAmountLabel.textContent = "Bonus Amount Per Hour (£)";
+    } else {
+      bonusAmountLabel.textContent = "Bonus Amount (£)";
+    }
   }
 }
 
