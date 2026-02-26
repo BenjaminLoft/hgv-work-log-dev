@@ -33,9 +33,9 @@
 		<h2>All Shifts</h2>
 
     <div class="calendar-controls">
-      <div class="segment-toggle" role="tablist" aria-label="Shift view period">
-        <button id="shiftViewWeekBtn" type="button" class="seg-btn is-active" role="tab" aria-selected="true">Week</button>
-        <button id="shiftViewMonthBtn" type="button" class="seg-btn" role="tab" aria-selected="false">Month</button>
+      <div class="segmented" role="tablist" aria-label="Shift view period">
+        <button id="shiftTabWeek" type="button" class="seg-btn is-active" role="tab" aria-selected="true" onclick="setShiftsCalendarTab('week')">Week</button>
+        <button id="shiftTabMonth" type="button" class="seg-btn" role="tab" aria-selected="false" onclick="setShiftsCalendarTab('month')">Month</button>
       </div>
 
       <div id="shiftWeekPickerWrap">

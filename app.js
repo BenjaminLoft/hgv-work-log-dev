@@ -2197,10 +2197,31 @@ function syncShiftsPagePickers() {
   if (monthEl) monthEl.value = shiftsPageState.monthValue;
 }
 
+function getFirstShiftDateInWeek(byDate, weekValue) {
+  const monday = getMondayFromIsoWeekValue(weekValue);
+  if (!monday) return "";
+  for (let i = 0; i < 7; i += 1) {
+    const key = toDateKey(addDays(monday, i));
+    if ((byDate.get(key) || []).length) return key;
+  }
+  return toDateKey(monday);
+}
+
+function getFirstShiftDateInMonth(byDate, monthValue) {
+  if (!/^\d{4}-\d{2}$/.test(String(monthValue || ""))) return "";
+  const monthStart = dateOnlyToDate(`${monthValue}-01`);
+  const monthEnd = new Date(monthStart.getFullYear(), monthStart.getMonth() + 1, 0);
+  for (let d = new Date(monthStart); d <= monthEnd; d = addDays(d, 1)) {
+    const key = toDateKey(d);
+    if ((byDate.get(key) || []).length) return key;
+  }
+  return toDateKey(monthStart);
+}
+
 function setShiftsPageMode(mode) {
   shiftsPageState.mode = (mode === "month") ? "month" : "week";
-  const weekBtn = document.getElementById("shiftViewWeekBtn");
-  const monthBtn = document.getElementById("shiftViewMonthBtn");
+  const weekBtn = document.getElementById("shiftTabWeek");
+  const monthBtn = document.getElementById("shiftTabMonth");
   const weekWrap = document.getElementById("shiftWeekPickerWrap");
   const monthWrap = document.getElementById("shiftMonthPickerWrap");
 
@@ -2216,6 +2237,19 @@ function setShiftsPageMode(mode) {
   if (monthWrap) monthWrap.hidden = shiftsPageState.mode !== "month";
 }
 
+function setShiftsCalendarTab(mode) {
+  setShiftsPageMode(mode);
+  const byDate = buildShiftDateMap();
+  if (shiftsPageState.mode === "month") {
+    shiftsPageState.selectedDate = getFirstShiftDateInMonth(byDate, shiftsPageState.monthValue);
+    shiftsPageState.weekValue = getIsoWeekValue(dateOnlyToDate(shiftsPageState.selectedDate));
+  } else {
+    shiftsPageState.selectedDate = getFirstShiftDateInWeek(byDate, shiftsPageState.weekValue);
+    shiftsPageState.monthValue = shiftsPageState.selectedDate.slice(0, 7);
+  }
+  renderShiftsCalendarPage();
+}
+
 function initShiftsCalendarPageControls() {
   const calendarEl = document.getElementById("shiftCalendar");
   if (!calendarEl || shiftsPageState.initialized) return;
@@ -2227,26 +2261,17 @@ function initShiftsCalendarPageControls() {
   shiftsPageState.weekValue = shiftsPageState.weekValue || getIsoWeekValue(today);
   shiftsPageState.mode = (shiftsPageState.mode === "month") ? "month" : "week";
 
-  const weekBtn = document.getElementById("shiftViewWeekBtn");
-  const monthBtn = document.getElementById("shiftViewMonthBtn");
   const weekEl = document.getElementById("shiftWeekPicker");
   const monthEl = document.getElementById("shiftMonthPicker");
 
-  if (weekBtn) weekBtn.addEventListener("click", () => {
-    setShiftsPageMode("week");
-    renderShiftsCalendarPage();
-  });
-  if (monthBtn) monthBtn.addEventListener("click", () => {
-    setShiftsPageMode("month");
-    renderShiftsCalendarPage();
-  });
   if (weekEl) {
     weekEl.addEventListener("change", () => {
       const monday = getMondayFromIsoWeekValue(weekEl.value);
       if (!monday) return;
       shiftsPageState.weekValue = weekEl.value;
-      shiftsPageState.selectedDate = toDateKey(monday);
-      shiftsPageState.monthValue = shiftsPageState.selectedDate.slice(0, 7);
+      const byDate = buildShiftDateMap();
+      shiftsPageState.selectedDate = getFirstShiftDateInWeek(byDate, shiftsPageState.weekValue);
+      shiftsPageState.monthValue = toDateKey(monday).slice(0, 7);
       renderShiftsCalendarPage();
     });
   }
@@ -2255,7 +2280,8 @@ function initShiftsCalendarPageControls() {
       const monthVal = String(monthEl.value || "");
       if (!/^\d{4}-\d{2}$/.test(monthVal)) return;
       shiftsPageState.monthValue = monthVal;
-      shiftsPageState.selectedDate = `${monthVal}-01`;
+      const byDate = buildShiftDateMap();
+      shiftsPageState.selectedDate = getFirstShiftDateInMonth(byDate, shiftsPageState.monthValue);
       shiftsPageState.weekValue = getIsoWeekValue(dateOnlyToDate(shiftsPageState.selectedDate));
       renderShiftsCalendarPage();
     });
@@ -2345,10 +2371,21 @@ function renderSelectedShiftDateDetails(byDate) {
 function renderShiftsCalendarPage() {
   if (!document.getElementById("shiftCalendar")) return;
   initShiftsCalendarPageControls();
+  const byDate = buildShiftDateMap();
+  if (shiftsPageState.mode === "month") {
+    if (!String(shiftsPageState.selectedDate || "").startsWith(`${shiftsPageState.monthValue}-`)) {
+      shiftsPageState.selectedDate = getFirstShiftDateInMonth(byDate, shiftsPageState.monthValue);
+    }
+  } else {
+    const weekStart = getWeekStartMonday(shiftsPageState.selectedDate || "");
+    const selectedWeekValue = weekStart ? getIsoWeekValue(dateOnlyToDate(weekStart)) : "";
+    if (selectedWeekValue !== shiftsPageState.weekValue) {
+      shiftsPageState.selectedDate = getFirstShiftDateInWeek(byDate, shiftsPageState.weekValue);
+    }
+  }
+
   syncShiftsPagePickers();
   setShiftsPageMode(shiftsPageState.mode);
-
-  const byDate = buildShiftDateMap();
   renderShiftsCalendarGrid(byDate);
   renderSelectedShiftDateDetails(byDate);
 }

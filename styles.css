@@ -382,29 +382,6 @@ button:active{ transform: scale(0.99); }
 .calendar-controls{
   margin-top: 10px;
 }
-.segment-toggle{
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 8px;
-  margin-bottom: 12px;
-}
-.seg-btn{
-  margin-top: 0;
-  width: 100%;
-  padding: 10px 12px;
-  font-size: 14px;
-  border-radius: 12px;
-  background: rgba(255,255,255,0.05);
-  color: var(--text);
-  border: 1px solid rgba(255,255,255,0.12);
-  box-shadow: none;
-}
-.seg-btn.is-active{
-  background: linear-gradient(90deg, var(--accent), #9a7bff);
-  color: #0b0f1a;
-  border-color: transparent;
-  box-shadow: 0 10px 24px rgba(124,92,255,0.30);
-}
 
 .calendar-legend{
   display: flex;
