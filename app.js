@@ -668,6 +668,7 @@ function loadSettings() {
   document.getElementById("otSaturday").value = settings.otSaturday;
   document.getElementById("otSunday").value = settings.otSunday;
   document.getElementById("otBankHoliday").value = settings.otBankHoliday;
+  document.getElementById("annualLeaveAllowance").value = settings.annualLeaveAllowance || 0;
 }
 
 function saveSettings() {
@@ -679,6 +680,7 @@ function saveSettings() {
   settings.otSaturday = Number(document.getElementById("otSaturday")?.value) || 1;
   settings.otSunday = Number(document.getElementById("otSunday")?.value) || 1;
   settings.otBankHoliday = Number(document.getElementById("otBankHoliday")?.value) || 1;
+  settings.annualLeaveAllowance = Number(document.getElementById("annualLeaveAllowance")?.value) || 0;
 
   saveAll();
   alert("Settings saved");
@@ -828,8 +830,8 @@ function initVehicleCombobox() {
    HOURS + NIGHT HOURS
 ================================ */
 
-function calculateHours(start, finish, isAL) {
-  if (isAL) return { worked: 9, breaks: 0, paid: 9 };
+function calculateHours(start, finish, isAL, isSick) {
+  if (isAL || isSick) return { worked: 9, breaks: 0, paid: 9 };
 
   if (!start || !finish) return { worked: 0, breaks: 0, paid: 0 };
 
@@ -884,7 +886,7 @@ function applyCompanyPaidRules(shift) {
   const c = getCompanyById(shift.companyId);
   const minPaid = clamp0(shift.overrides?.minPaidShiftHours ?? c?.minPaidShiftHours ?? 0);
 
-  if (!shift.annualLeave && minPaid > 0) {
+  if (!shift.annualLeave && !shift.sickDay && minPaid > 0) {
     shift.paid = Math.max(clamp0(shift.paid), minPaid);
   }
   return shift;
@@ -911,7 +913,7 @@ function splitPaidIntoBaseAndOT_DailyWorked(shift) {
   }
 
   // Annual leave: treat as base hours
-  if (shift?.annualLeave) {
+  if (shift?.annualLeave || shift?.sickDay) {
     return { baseHours: paid, otHours: 0 };
   }
 
@@ -1058,6 +1060,19 @@ function initMileageBehavior() {
   finishEl.addEventListener("input", updateMileageDone);
 }
 
+function initLeaveCheckboxBehavior() {
+  const annualLeaveEl = document.getElementById("annualLeave");
+  const sickDayEl = document.getElementById("sickDay");
+  if (!annualLeaveEl || !sickDayEl) return;
+
+  annualLeaveEl.addEventListener("change", () => {
+    if (annualLeaveEl.checked) sickDayEl.checked = false;
+  });
+  sickDayEl.addEventListener("change", () => {
+    if (sickDayEl.checked) annualLeaveEl.checked = false;
+  });
+}
+
 /* ===============================
    ADD / UPDATE SHIFT
 ================================ */
@@ -1085,10 +1100,16 @@ function addOrUpdateShift() {
   const vehicleRaw = showVehicle ? (document.getElementById("vehicle")?.value || "") : "";
   const vehicle = vehicleRaw.toUpperCase().trim();
   const shiftType = document.getElementById("shiftType")?.value || "day";
+  const isAnnualLeave = !!document.getElementById("annualLeave")?.checked;
+  const isSickDay = !!document.getElementById("sickDay")?.checked;
   const startMileage = showMileage ? Number(document.getElementById("startMileage")?.value || 0) : 0;
   const finishMileage = showMileage ? Number(document.getElementById("finishMileage")?.value || 0) : 0;
   const mileage = showMileage ? Math.max(0, finishMileage - startMileage) : 0;
   const defectsNotes = document.getElementById("defects")?.value || "";
+
+  if (isAnnualLeave && isSickDay) {
+    return alert("A shift can't be both Annual Leave and Sick Day.");
+  }
 
   if (vehicle && !vehicles.includes(vehicle)) {
     vehicles.push(vehicle);
@@ -1111,7 +1132,8 @@ function addOrUpdateShift() {
     mileage,
     defects: defectsNotes,
     notes: defectsNotes,
-    annualLeave: !!document.getElementById("annualLeave")?.checked,
+    annualLeave: isAnnualLeave,
+    sickDay: isSickDay,
     bankHoliday: !!document.getElementById("bankHoliday")?.checked,
 
     createdAt:
@@ -1121,7 +1143,7 @@ function addOrUpdateShift() {
   };
 
   // Hours
-  const hrs = calculateHours(shift.start, shift.finish, shift.annualLeave);
+  const hrs = calculateHours(shift.start, shift.finish, shift.annualLeave, shift.sickDay);
   shift.worked = hrs.worked;
   shift.breaks = hrs.breaks;
   shift.paid = hrs.paid;
@@ -1284,7 +1306,7 @@ function processShifts(group, mode = "overall") {
         s.finish,
         nb.start || "22:00",
         nb.end || "06:00",
-        !!s.annualLeave
+        !!(s.annualLeave || s.sickDay)
       );
       nightHoursTotal += nh;
 
@@ -1307,7 +1329,7 @@ function processShifts(group, mode = "overall") {
         const paid = Number(s.paid || 0);
         otPay += paid * profile.baseRate * mult;
         totalOTHours += paid;
-      } else if (s.annualLeave) {
+      } else if (s.annualLeave || s.sickDay) {
         const paid = Number(s.paid || 0);
         basePay += paid * profile.baseRate;
       } else {
@@ -1356,7 +1378,7 @@ function processShifts(group, mode = "overall") {
         s.finish,
         nb.start || "22:00",
         nb.end || "06:00",
-        !!s.annualLeave
+        !!(s.annualLeave || s.sickDay)
       );
       nightHoursTotal += nh;
 
@@ -1384,7 +1406,7 @@ function processShifts(group, mode = "overall") {
     }
 
     // --- Annual leave: base pay
-    if (s.annualLeave) {
+    if (s.annualLeave || s.sickDay) {
       const paid = Number(s.paid || 0);
       basePay += paid * profile.baseRate;
       return;
@@ -1583,6 +1605,37 @@ function renderCurrentPeriodTiles() {
 
   const monthResult = processMonthAsWeeks(monthShifts, "overall");
   renderBreakdownTiles("thisMonthTiles", "", monthResult, order);
+}
+
+function getYearlyLeaveStats(year = new Date().getFullYear()) {
+  const y = Number(year || new Date().getFullYear());
+  const inYear = shifts.filter(s => Number((s.date || "").slice(0, 4)) === y);
+  const annualLeaveTaken = inYear.filter(s => !!s.annualLeave).length;
+  const sickDaysTaken = inYear.filter(s => !!s.sickDay).length;
+  const allowance = Number(settings.annualLeaveAllowance || 0);
+  const remaining = allowance - annualLeaveTaken;
+
+  return { year: y, annualLeaveTaken, sickDaysTaken, allowance, remaining };
+}
+
+function renderLeaveStats() {
+  const el = document.getElementById("leaveStats");
+  if (!el) return;
+
+  const stats = getYearlyLeaveStats(new Date().getFullYear());
+  const remText = stats.remaining >= 0
+    ? `${stats.remaining} days remaining`
+    : `${Math.abs(stats.remaining)} days over allowance`;
+
+  el.innerHTML = `
+    <div class="grid">
+      <div class="tile"><div class="label">Year</div><div class="value">${stats.year}</div></div>
+      <div class="tile"><div class="label">Annual Leave Allowance</div><div class="value">${Number(stats.allowance).toFixed(0)} days</div></div>
+      <div class="tile"><div class="label">Annual Leave Taken</div><div class="value">${Number(stats.annualLeaveTaken).toFixed(0)} days</div></div>
+      <div class="tile"><div class="label">Annual Leave Balance</div><div class="value">${escapeHtml(remText)}</div></div>
+      <div class="tile"><div class="label">Sick Days Taken</div><div class="value">${Number(stats.sickDaysTaken).toFixed(0)} days</div></div>
+    </div>
+  `;
 }
 
 /* ===============================
@@ -1794,7 +1847,7 @@ function getWeekStartMonday(dateStr) {
 
 function formatShiftLine(s, index) {
   const companyName = getCompanyById(s.companyId)?.name || "Unknown Company";
-  const flags = [s.shiftType === "night" ? "NIGHT" : "", s.annualLeave ? "AL" : "", s.bankHoliday ? "BH" : ""].filter(Boolean).join(" ");
+  const flags = [s.shiftType === "night" ? "NIGHT" : "", s.annualLeave ? "AL" : "", s.sickDay ? "SICK" : "", s.bankHoliday ? "BH" : ""].filter(Boolean).join(" ");
 
   const defects = (s.defects || "").trim();
   const defectsPreview = defects.length > 80 ? defects.slice(0, 80) + "…" : defects;
@@ -1923,6 +1976,7 @@ function loadShiftForEditingIfRequested() {
   if (defectsEl) defectsEl.value = (s.defects ?? s.notes ?? "");
 
   setCheck("annualLeave", s.annualLeave);
+  setCheck("sickDay", s.sickDay);
   setCheck("bankHoliday", s.bankHoliday);
 }
 
@@ -1974,6 +2028,7 @@ function restoreBackup(event) {
       loadSettings();
       renderCompanySummary();
       renderCurrentPeriodTiles();
+      renderLeaveStats();
       if (typeof renderWeeklyGroupedShifts === "function") renderWeeklyGroupedShifts();
     } catch (err) {
       alert("That backup file looks invalid or corrupted.");
@@ -2098,7 +2153,7 @@ function buildPayslipHTML({ title, periodLabel, periodStart, periodEnd, overall,
 
   const shiftRows = rows.map(s => {
     const companyName = getCompanyById(s.companyId)?.name || "Unknown Company";
-    const flags = [s.annualLeave ? "AL" : "", s.bankHoliday ? "BH" : ""].filter(Boolean).join(" ");
+    const flags = [s.annualLeave ? "AL" : "", s.sickDay ? "SICK" : "", s.bankHoliday ? "BH" : ""].filter(Boolean).join(" ");
     return `
       <tr>
         <td><strong>${escapeHtml(s.date)}</strong>${flags ? `<div class="small">${escapeHtml(flags)}</div>` : ""}</td>
@@ -2270,7 +2325,7 @@ function exportPayslip(period = "week") {
       // add night pay estimate on the line
       const company = getCompanyById(s.companyId);
       const nb = company?.nightBonus || { mode: "none", amount: 0, start: "22:00", end: "06:00" };
-      const nh = calcNightHoursForShift(s.start, s.finish, nb.start, nb.end, !!s.annualLeave);
+      const nh = calcNightHoursForShift(s.start, s.finish, nb.start, nb.end, !!(s.annualLeave || s.sickDay));
       if (nb.mode === "per_hour") linePay += nh * Number(nb.amount || 0);
       else if (nb.mode === "per_shift") { if (nh > 0) linePay += Number(nb.amount || 0); }
       // per_week can’t be reliably allocated per line, so we leave it out of shift line pay (it still appears in totals)
@@ -2331,11 +2386,13 @@ document.addEventListener("DOMContentLoaded", () => {
   loadShiftForEditingIfRequested();
   initShiftTypeBehavior();
   initMileageBehavior();
+  initLeaveCheckboxBehavior();
   applyDefaultsToShiftEntry();
 
   // Summary page
   renderCurrentPeriodTiles();
   renderCompanySummary();
+  renderLeaveStats();
 
   // General blocks
   renderAll();
