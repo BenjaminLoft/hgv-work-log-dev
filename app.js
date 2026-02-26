@@ -7,7 +7,7 @@
    STORAGE
 ================================ */
 
-const DATA_MODEL_VERSION = 3;
+const DATA_MODEL_VERSION = 6;
 const DATA_VERSION_KEY = "dataVersion";
 const DEFAULT_SETTINGS = {
   defaultStart: "",
@@ -101,9 +101,62 @@ function normalizeVehicles(src) {
   )];
 }
 
+function normalizeBonusRule(src) {
+  const r = (src && typeof src === "object") ? src : {};
+  const type = String(r.type || "none");
+
+  if (type === "night_window") {
+    const mode = String(r.mode || "per_hour");
+    return {
+      type: "night_window",
+      mode: (mode === "per_hour" || mode === "per_shift" || mode === "per_week") ? mode : "per_hour",
+      amount: Number(r.amount || 0),
+      start: r.start || "22:00",
+      end: r.end || "06:00",
+      name: String(r.name || "Night-window bonus")
+    };
+  }
+
+  if (type === "per_shift_flat") {
+    return {
+      type: "per_shift_flat",
+      amount: Number(r.amount || 0),
+      name: String(r.name || "Per-shift bonus")
+    };
+  }
+
+  return { type: "none", amount: 0, name: "No bonus" };
+}
+
+function toLegacyNightBonusFromRule(rule) {
+  if (!rule || rule.type !== "night_window") {
+    return { mode: "none", amount: 0, start: "22:00", end: "06:00" };
+  }
+  return {
+    mode: rule.mode || "none",
+    amount: Number(rule.amount || 0),
+    start: rule.start || "22:00",
+    end: rule.end || "06:00"
+  };
+}
+
 function normalizeCompany(src) {
   const c = (src && typeof src === "object") ? src : {};
   const nightBonus = c.nightBonus || {};
+  const rules = Array.isArray(c.bonusRules) ? c.bonusRules.map(normalizeBonusRule) : [];
+  const activeRules = rules.filter(r => r.type !== "none");
+  const migratedLegacy = normalizeBonusRule({
+    type: "night_window",
+    mode: nightBonus.mode || "none",
+    amount: Number(nightBonus.amount || 0),
+    start: nightBonus.start || "22:00",
+    end: nightBonus.end || "06:00",
+    name: "Night-window bonus"
+  });
+  const finalRules = activeRules.length
+    ? activeRules
+    : (migratedLegacy.mode !== "none" ? [migratedLegacy] : []);
+  const legacyFromRule = toLegacyNightBonusFromRule(finalRules[0] || null);
 
   return {
     ...c,
@@ -114,14 +167,10 @@ function normalizeCompany(src) {
     baseWeeklyHours: Number(c.baseWeeklyHours || 0),
     baseDailyPaidHours: Number(c.baseDailyPaidHours || 0),
     standardShiftLength: Number(c.standardShiftLength || 0),
+    nightOutPay: Number(c.nightOutPay || 0),
     dailyOTAfterWorkedHours: Number(c.dailyOTAfterWorkedHours || 0),
     minPaidShiftHours: Number(c.minPaidShiftHours || 0),
-    nightBonus: {
-      mode: nightBonus.mode || "none",
-      amount: Number(nightBonus.amount || 0),
-      start: nightBonus.start || "22:00",
-      end: nightBonus.end || "06:00"
-    },
+    nightBonus: legacyFromRule,
     ot: {
       weekday: Number(c.ot?.weekday || 1),
       saturday: Number(c.ot?.saturday || 1),
@@ -131,7 +180,7 @@ function normalizeCompany(src) {
     showVehicleField: (c.showVehicleField !== false),
     showTrailerFields: (c.showTrailerFields !== false),
     showMileageFields: !!c.showMileageFields,
-    bonusRules: Array.isArray(c.bonusRules) ? c.bonusRules : [],
+    bonusRules: finalRules,
     vehicleIds: Array.isArray(c.vehicleIds) ? c.vehicleIds : []
   };
 }
@@ -139,6 +188,8 @@ function normalizeCompany(src) {
 function normalizeShift(src) {
   const s = (src && typeof src === "object") ? src : {};
   const expenses = s.expenses || {};
+  const nightOutCountRaw = Number(s.nightOutCount || 0);
+  const nightOutPayRaw = Number(s.nightOutPay || 0);
 
   return {
     ...s,
@@ -163,8 +214,9 @@ function normalizeShift(src) {
       parking: Number(expenses.parking || 0),
       tolls: Number(expenses.tolls || 0)
     },
-    nightOutCount: Number(s.nightOutCount || 0),
-    nightOutPay: Number(s.nightOutPay || 0)
+    nightOut: !!(s.nightOut || nightOutCountRaw > 0 || nightOutPayRaw > 0),
+    nightOutCount: Math.max(0, nightOutCountRaw),
+    nightOutPay: Math.max(0, nightOutPayRaw)
   };
 }
 
@@ -221,6 +273,35 @@ function initSummaryTabs() {
   })();
 
   setSummaryTab(saved === "month" ? "month" : "week");
+  syncSummaryPeriodModeUI();
+}
+
+function getSummaryPeriodMode() {
+  const mode = String(settings?.summaryPeriodMode || "month");
+  return (mode === "four_week") ? "four_week" : "month";
+}
+
+function setSummaryPeriodMode(mode) {
+  settings.summaryPeriodMode = (mode === "four_week") ? "four_week" : "month";
+  saveAll();
+  syncSummaryPeriodModeUI();
+  renderCurrentPeriodTiles();
+  renderCompanySummary();
+}
+
+function syncSummaryPeriodModeUI() {
+  const mode = getSummaryPeriodMode();
+  const monthBtn = document.getElementById("periodMonthBtn");
+  const fourBtn = document.getElementById("periodFourWeekBtn");
+  const titleEl = document.getElementById("summaryPeriodLabel");
+  const breakdownEl = document.getElementById("monthlyBreakdownSummary");
+  const exportBtn = document.getElementById("exportSummaryPeriodBtn");
+
+  if (monthBtn) monthBtn.classList.toggle("is-active", mode === "month");
+  if (fourBtn) fourBtn.classList.toggle("is-active", mode === "four_week");
+  if (titleEl) titleEl.textContent = mode === "four_week" ? "Last 4 Weeks" : "Month";
+  if (breakdownEl) breakdownEl.textContent = mode === "four_week" ? "4-week breakdown" : "Monthly breakdown";
+  if (exportBtn) exportBtn.textContent = mode === "four_week" ? "Export 4-Week Payslip (PDF)" : "Export Month Payslip (PDF)";
 }
 /* ===============================
    DEFAULT COMPANY / DEFAULT SELECTION
@@ -251,6 +332,7 @@ function ensureDefaultCompany() {
       start: "22:00",
       end: "06:00"
     },
+    bonusRules: [],
     ot: {
       weekday: settings.otWeekday ?? 1.25,
       saturday: settings.otSaturday ?? 1.25,
@@ -262,6 +344,7 @@ function ensureDefaultCompany() {
     showVehicleField: true,
     showTrailerFields: true,
     showMileageFields: false,
+    nightOutPay: 0,
     vehicleIds: [],
     createdAt: Date.now()
   }];
@@ -282,6 +365,42 @@ function getSelectableCompanies() {
 function getCompanyById(id) {
   if (!id) return null;
   return (companies || []).find(c => c.id === id) || null;
+}
+
+function getPrimaryBonusRule(company) {
+  const c = company || {};
+  const rules = Array.isArray(c.bonusRules) ? c.bonusRules : [];
+  const first = rules.find(r => r && r.type && r.type !== "none");
+  if (first) return normalizeBonusRule(first);
+
+  const nb = c.nightBonus || {};
+  if ((nb.mode || "none") === "none") return { type: "none", amount: 0, name: "No bonus" };
+  return normalizeBonusRule({
+    type: "night_window",
+    mode: nb.mode || "none",
+    amount: Number(nb.amount || 0),
+    start: nb.start || "22:00",
+    end: nb.end || "06:00",
+    name: "Night-window bonus"
+  });
+}
+
+function getBonusSummaryText(company) {
+  const rule = getPrimaryBonusRule(company);
+  if (!rule || rule.type === "none") return "Bonus: none";
+  if (rule.type === "per_shift_flat") {
+    return `Bonus: £${Number(rule.amount || 0).toFixed(2)}/shift`;
+  }
+  if (rule.mode === "per_hour") {
+    return `Bonus: £${Number(rule.amount || 0).toFixed(2)}/hr (${rule.start}-${rule.end})`;
+  }
+  if (rule.mode === "per_shift") {
+    return `Bonus: £${Number(rule.amount || 0).toFixed(2)}/shift (${rule.start}-${rule.end})`;
+  }
+  if (rule.mode === "per_week") {
+    return `Bonus: £${Number(rule.amount || 0).toFixed(2)}/week (${rule.start}-${rule.end})`;
+  }
+  return "Bonus: none";
 }
 
 function getCompanyAssignedVehicles(companyId) {
@@ -365,6 +484,7 @@ function renderCompanyDropdowns(selectedId = "") {
 
   applyCompanyShiftEntryVisibility(sel.value);
   renderVehicleMenuOptions(document.getElementById("vehicle")?.value || "");
+  initNightOutBehavior();
 }
 
 /* ===============================
@@ -387,12 +507,7 @@ function renderCompanies() {
       ? c.id === currentDefault
       : (getUserCompanies().length === 1 && c.id !== "cmp_default");
 
-    const nb = c.nightBonus || { mode: "none", amount: 0, start: "22:00", end: "06:00" };
-    const nbText =
-      nb.mode === "none" ? "Night bonus: none" :
-      nb.mode === "per_hour" ? `Night bonus: £${Number(nb.amount || 0).toFixed(2)}/hr (${nb.start}-${nb.end})` :
-      nb.mode === "per_shift" ? `Night bonus: £${Number(nb.amount || 0).toFixed(2)}/shift (${nb.start}-${nb.end})` :
-      `Night bonus: £${Number(nb.amount || 0).toFixed(2)}/week (${nb.start}-${nb.end})`;
+    const nbText = getBonusSummaryText(c);
 
     return `
       <div class="shift-card">
@@ -404,6 +519,7 @@ function renderCompanies() {
           Rate: £${Number(c.baseRate || 0).toFixed(2)}<br>
 		  ${c.baseDailyPaidHours ? `Base daily paid (salaried): ${Number(c.baseDailyPaidHours || 0).toFixed(2)} hrs<br>` : ""}
 		  ${c.standardShiftLength ? `Std shift length: ${Number(c.standardShiftLength || 0).toFixed(2)} hrs<br>` : ""}
+          Night out pay: £${Number(c.nightOutPay || 0).toFixed(2)}<br>
           Weekly base: ${Number(c.baseWeeklyHours || 0).toFixed(2)} hrs<br>
           ${(c.payMode === "daily")
 		  ? `Daily OT after (worked): ${Number(c.dailyOTAfterWorkedHours || 0).toFixed(2)} hrs<br>` : ``}
@@ -452,6 +568,31 @@ function addOrUpdateCompany() {
   if (!name) return alert("Please enter a company name");
   if (!Number.isFinite(baseRate)) return alert("Please enter a valid hourly rate");
 
+  const bonusType = document.getElementById("bonusType")?.value || "none";
+  const bonusMode = document.getElementById("bonusMode")?.value || "per_hour";
+  const bonusAmount = Number(document.getElementById("bonusAmount")?.value) || 0;
+  const bonusStart = document.getElementById("bonusStart")?.value || "22:00";
+  const bonusEnd = document.getElementById("bonusEnd")?.value || "06:00";
+
+  let bonusRules = [];
+  if (bonusType === "night_window") {
+    bonusRules = [normalizeBonusRule({
+      type: "night_window",
+      mode: bonusMode,
+      amount: bonusAmount,
+      start: bonusStart,
+      end: bonusEnd,
+      name: "Night-window bonus"
+    })];
+  } else if (bonusType === "per_shift_flat") {
+    bonusRules = [normalizeBonusRule({
+      type: "per_shift_flat",
+      amount: bonusAmount,
+      name: "Per-shift bonus"
+    })];
+  }
+  const legacyNightBonus = toLegacyNightBonusFromRule(bonusRules[0] || null);
+
   const company = {
     id: id || generateCompanyId(),
     name,
@@ -461,6 +602,7 @@ function addOrUpdateCompany() {
 	baseWeeklyHours: Number(document.getElementById("baseWeeklyHours")?.value) || 0,
 	baseDailyPaidHours: Number(document.getElementById("baseDailyPaidHours")?.value) || 0,
 	standardShiftLength: Number(document.getElementById("standardShiftLength")?.value) || 0,
+	nightOutPay: Number(document.getElementById("companyNightOutPay")?.value) || 0,
 	dailyOTAfterWorkedHours: Number(document.getElementById("dailyOTAfterWorkedHours")?.value) || 0,
 	minPaidShiftHours: Number(document.getElementById("minPaidShiftHours")?.value) || 0,
 
@@ -471,12 +613,8 @@ function addOrUpdateCompany() {
       bankHoliday: Number(document.getElementById("otBankHoliday")?.value) || 1
     },
 
-    nightBonus: {
-      mode: document.getElementById("nightBonusMode")?.value || "none",
-      amount: Number(document.getElementById("nightBonusAmount")?.value) || 0,
-      start: document.getElementById("nightBonusStart")?.value || "22:00",
-      end: document.getElementById("nightBonusEnd")?.value || "06:00"
-    },
+    nightBonus: legacyNightBonus,
+    bonusRules,
 
     showVehicleField: !!document.getElementById("showVehicleField")?.checked,
     showTrailerFields: !!document.getElementById("showTrailerFields")?.checked,
@@ -530,7 +668,7 @@ function editCompany(id) {
   // Pay mode first (so UI can react)
   setVal("payMode", c.payMode || "weekly");
 
-  // If you have UI logic to show/hide daily OT + night bonus fields, call it here
+  // If you have UI logic to show/hide daily OT + bonus fields, call it here
   if (typeof updateCompanyFormVisibility === "function") {
     updateCompanyFormVisibility();
   } else {
@@ -542,12 +680,14 @@ function editCompany(id) {
   setVal("dailyOTAfterWorkedHours", c.dailyOTAfterWorkedHours);
   setVal("minPaidShiftHours", c.minPaidShiftHours);
 
-  // Night bonus
-  const nb = c.nightBonus || {};
-  setVal("nightBonusMode", nb.mode || "none");
-  setVal("nightBonusAmount", nb.amount ?? 0);
-  setVal("nightBonusStart", nb.start || "22:00");
-  setVal("nightBonusEnd", nb.end || "06:00");
+  // Bonus
+  const bonus = getPrimaryBonusRule(c);
+  setVal("bonusType", bonus.type || "none");
+  setVal("bonusMode", bonus.mode || "per_hour");
+  setVal("bonusAmount", bonus.amount ?? 0);
+  setVal("bonusStart", bonus.start || "22:00");
+  setVal("bonusEnd", bonus.end || "06:00");
+  updateCompanyFormVisibility();
 
   // OT multipliers
   setVal("otWeekday", c.ot?.weekday);
@@ -559,6 +699,7 @@ function editCompany(id) {
   setVal("baseWeeklyHours", c.baseWeeklyHours);
   setVal("baseDailyPaidHours", c.baseDailyPaidHours);
   setVal("standardShiftLength", c.standardShiftLength);
+  setVal("companyNightOutPay", c.nightOutPay || 0);
 
   // Contact
   setVal("contactName", c.contactName);
@@ -618,7 +759,8 @@ function resetCompanyForm() {
     "companyId", "companyName", "companyBaseRate",
     "payMode", "baseWeeklyHours", "dailyOTAfterWorkedHours", "minPaidShiftHours",
     "otWeekday", "otSaturday", "otSunday", "otBankHoliday",
-    "nightBonusMode", "nightBonusAmount", "nightBonusStart", "nightBonusEnd",
+    "companyNightOutPay",
+    "bonusType", "bonusMode", "bonusAmount", "bonusStart", "bonusEnd",
     "contactName", "contactNumber"
   ];
   ids.forEach(id => {
@@ -634,16 +776,18 @@ function resetCompanyForm() {
   if (document.getElementById("minPaidShiftHours")) document.getElementById("minPaidShiftHours").value = 0;
   if (document.getElementById("baseDailyPaidHours")) document.getElementById("baseDailyPaidHours").value = 0;
   if (document.getElementById("standardShiftLength")) document.getElementById("standardShiftLength").value = 0;
+  if (document.getElementById("companyNightOutPay")) document.getElementById("companyNightOutPay").value = 0;
 
   if (document.getElementById("otWeekday")) document.getElementById("otWeekday").value = settings.otWeekday ?? 1.25;
   if (document.getElementById("otSaturday")) document.getElementById("otSaturday").value = settings.otSaturday ?? 1.25;
   if (document.getElementById("otSunday")) document.getElementById("otSunday").value = settings.otSunday ?? 1.5;
   if (document.getElementById("otBankHoliday")) document.getElementById("otBankHoliday").value = settings.otBankHoliday ?? 2;
 
-  if (document.getElementById("nightBonusMode")) document.getElementById("nightBonusMode").value = "none";
-  if (document.getElementById("nightBonusAmount")) document.getElementById("nightBonusAmount").value = 0.5;
-  if (document.getElementById("nightBonusStart")) document.getElementById("nightBonusStart").value = "22:00";
-  if (document.getElementById("nightBonusEnd")) document.getElementById("nightBonusEnd").value = "06:00";
+  if (document.getElementById("bonusType")) document.getElementById("bonusType").value = "none";
+  if (document.getElementById("bonusMode")) document.getElementById("bonusMode").value = "per_hour";
+  if (document.getElementById("bonusAmount")) document.getElementById("bonusAmount").value = 0.5;
+  if (document.getElementById("bonusStart")) document.getElementById("bonusStart").value = "22:00";
+  if (document.getElementById("bonusEnd")) document.getElementById("bonusEnd").value = "06:00";
 
   if (document.getElementById("showVehicleField")) document.getElementById("showVehicleField").checked = true;
   if (document.getElementById("showTrailerFields")) document.getElementById("showTrailerFields").checked = true;
@@ -668,6 +812,7 @@ function loadSettings() {
   document.getElementById("otSaturday").value = settings.otSaturday;
   document.getElementById("otSunday").value = settings.otSunday;
   document.getElementById("otBankHoliday").value = settings.otBankHoliday;
+  document.getElementById("annualLeaveAllowance").value = settings.annualLeaveAllowance || 0;
 }
 
 function saveSettings() {
@@ -679,6 +824,7 @@ function saveSettings() {
   settings.otSaturday = Number(document.getElementById("otSaturday")?.value) || 1;
   settings.otSunday = Number(document.getElementById("otSunday")?.value) || 1;
   settings.otBankHoliday = Number(document.getElementById("otBankHoliday")?.value) || 1;
+  settings.annualLeaveAllowance = Number(document.getElementById("annualLeaveAllowance")?.value) || 0;
 
   saveAll();
   alert("Settings saved");
@@ -820,6 +966,7 @@ function initVehicleCombobox() {
     companyEl.addEventListener("change", () => {
       applyCompanyShiftEntryVisibility(companyEl.value);
       renderVehicleMenuOptions(input.value);
+      initNightOutBehavior();
     });
   }
 }
@@ -828,8 +975,11 @@ function initVehicleCombobox() {
    HOURS + NIGHT HOURS
 ================================ */
 
-function calculateHours(start, finish, isAL) {
-  if (isAL) return { worked: 9, breaks: 0, paid: 9 };
+function calculateHours(start, finish, isAL, isSick, leavePaidHours = 9) {
+  if (isAL || isSick) {
+    const paid = clamp0(leavePaidHours || 9);
+    return { worked: paid, breaks: 0, paid };
+  }
 
   if (!start || !finish) return { worked: 0, breaks: 0, paid: 0 };
 
@@ -884,7 +1034,7 @@ function applyCompanyPaidRules(shift) {
   const c = getCompanyById(shift.companyId);
   const minPaid = clamp0(shift.overrides?.minPaidShiftHours ?? c?.minPaidShiftHours ?? 0);
 
-  if (!shift.annualLeave && minPaid > 0) {
+  if (!shift.annualLeave && !shift.sickDay && minPaid > 0) {
     shift.paid = Math.max(clamp0(shift.paid), minPaid);
   }
   return shift;
@@ -911,7 +1061,7 @@ function splitPaidIntoBaseAndOT_DailyWorked(shift) {
   }
 
   // Annual leave: treat as base hours
-  if (shift?.annualLeave) {
+  if (shift?.annualLeave || shift?.sickDay) {
     return { baseHours: paid, otHours: 0 };
   }
 
@@ -1058,6 +1208,30 @@ function initMileageBehavior() {
   finishEl.addEventListener("input", updateMileageDone);
 }
 
+function initLeaveCheckboxBehavior() {
+  const annualLeaveEl = document.getElementById("annualLeave");
+  const sickDayEl = document.getElementById("sickDay");
+  if (!annualLeaveEl || !sickDayEl) return;
+
+  annualLeaveEl.addEventListener("change", () => {
+    if (annualLeaveEl.checked) sickDayEl.checked = false;
+  });
+  sickDayEl.addEventListener("change", () => {
+    if (sickDayEl.checked) annualLeaveEl.checked = false;
+  });
+}
+
+function initNightOutBehavior() {
+  const nightOutEl = document.getElementById("nightOut");
+  const infoEl = document.getElementById("nightOutPayInfo");
+  const companyId = document.getElementById("company")?.value || "";
+  if (!nightOutEl || !infoEl) return;
+
+  const c = getCompanyById(companyId);
+  const rate = Number(c?.nightOutPay || 0);
+  infoEl.textContent = `Night Out Pay Rate (from company): £${rate.toFixed(2)} per night out.`;
+}
+
 /* ===============================
    ADD / UPDATE SHIFT
 ================================ */
@@ -1081,14 +1255,26 @@ function addOrUpdateShift() {
   const showVehicle = company ? (company.showVehicleField !== false) : true;
   const showTrailers = company ? (company.showTrailerFields !== false) : true;
   const showMileage = company ? !!company.showMileageFields : false;
+  const leavePaidHours = Math.max(0, clamp0(company?.standardShiftLength || 9) - 1);
 
   const vehicleRaw = showVehicle ? (document.getElementById("vehicle")?.value || "") : "";
   const vehicle = vehicleRaw.toUpperCase().trim();
   const shiftType = document.getElementById("shiftType")?.value || "day";
+  const isAnnualLeave = !!document.getElementById("annualLeave")?.checked;
+  const isSickDay = !!document.getElementById("sickDay")?.checked;
+  const isNightOut = !!document.getElementById("nightOut")?.checked;
   const startMileage = showMileage ? Number(document.getElementById("startMileage")?.value || 0) : 0;
   const finishMileage = showMileage ? Number(document.getElementById("finishMileage")?.value || 0) : 0;
   const mileage = showMileage ? Math.max(0, finishMileage - startMileage) : 0;
+  const expenseParking = Number(document.getElementById("expenseParking")?.value || 0);
+  const expenseTolls = Number(document.getElementById("expenseTolls")?.value || 0);
+  const nightOutPayRate = Number(company?.nightOutPay || 0);
+  const nightOutPay = isNightOut ? nightOutPayRate : 0;
   const defectsNotes = document.getElementById("defects")?.value || "";
+
+  if (isAnnualLeave && isSickDay) {
+    return alert("A shift can't be both Annual Leave and Sick Day.");
+  }
 
   if (vehicle && !vehicles.includes(vehicle)) {
     vehicles.push(vehicle);
@@ -1111,8 +1297,16 @@ function addOrUpdateShift() {
     mileage,
     defects: defectsNotes,
     notes: defectsNotes,
-    annualLeave: !!document.getElementById("annualLeave")?.checked,
+    annualLeave: isAnnualLeave,
+    sickDay: isSickDay,
     bankHoliday: !!document.getElementById("bankHoliday")?.checked,
+    expenses: {
+      parking: Math.max(0, expenseParking),
+      tolls: Math.max(0, expenseTolls)
+    },
+    nightOut: isNightOut,
+    nightOutCount: isNightOut ? 1 : 0,
+    nightOutPay: Math.max(0, nightOutPay),
 
     createdAt:
       (editingIndex !== null && shifts[editingIndex]?.createdAt)
@@ -1121,7 +1315,7 @@ function addOrUpdateShift() {
   };
 
   // Hours
-  const hrs = calculateHours(shift.start, shift.finish, shift.annualLeave);
+  const hrs = calculateHours(shift.start, shift.finish, shift.annualLeave, shift.sickDay, leavePaidHours);
   shift.worked = hrs.worked;
   shift.breaks = hrs.breaks;
   shift.paid = hrs.paid;
@@ -1166,6 +1360,7 @@ function clearForm() {
 
   // re-apply defaults (this fixes your “start time blank after reset” issue)
   applyDefaultsToShiftEntry();
+  initNightOutBehavior();
 }
 
 /* ===============================
@@ -1206,6 +1401,46 @@ function getCompanyWeeklyBaseHours(companyId) {
   return Number(c?.baseWeeklyHours ?? settings.baseHours ?? 0);
 }
 
+function calcBonusForShift(shift, company, weekPaidSet, perWeekKey = "") {
+  const rule = getPrimaryBonusRule(company);
+  if (!rule || rule.type === "none") return { bonusPay: 0, bonusHours: 0 };
+
+  const isLeave = !!(shift.annualLeave || shift.sickDay);
+  if (rule.type === "per_shift_flat") {
+    if (!isLeave && Number(shift.paid || 0) > 0) {
+      return { bonusPay: Number(rule.amount || 0), bonusHours: 0 };
+    }
+    return { bonusPay: 0, bonusHours: 0 };
+  }
+
+  if (rule.type === "night_window") {
+    const nh = calcNightHoursForShift(
+      shift.start,
+      shift.finish,
+      rule.start || "22:00",
+      rule.end || "06:00",
+      isLeave
+    );
+    if (rule.mode === "per_hour") {
+      return { bonusPay: nh * Number(rule.amount || 0), bonusHours: nh };
+    }
+    if (rule.mode === "per_shift") {
+      return { bonusPay: nh > 0 ? Number(rule.amount || 0) : 0, bonusHours: nh };
+    }
+    if (rule.mode === "per_week") {
+      if (nh <= 0 || !perWeekKey) return { bonusPay: 0, bonusHours: nh };
+      if (!weekPaidSet.has(perWeekKey)) {
+        weekPaidSet.add(perWeekKey);
+        return { bonusPay: Number(rule.amount || 0), bonusHours: nh };
+      }
+      return { bonusPay: 0, bonusHours: nh };
+    }
+    return { bonusPay: 0, bonusHours: nh };
+  }
+
+  return { bonusPay: 0, bonusHours: 0 };
+}
+
 function sumResults(a, b) {
   return {
     worked: (a.worked || 0) + (b.worked || 0),
@@ -1216,13 +1451,16 @@ function sumResults(a, b) {
     otPay: (a.otPay || 0) + (b.otPay || 0),
     nightHours: (a.nightHours || 0) + (b.nightHours || 0),
     nightPay: (a.nightPay || 0) + (b.nightPay || 0),
+    expenseTotal: (a.expenseTotal || 0) + (b.expenseTotal || 0),
+    nightOutCount: (a.nightOutCount || 0) + (b.nightOutCount || 0),
+    nightOutPay: (a.nightOutPay || 0) + (b.nightOutPay || 0),
     total: (a.total || 0) + (b.total || 0),
   };
 }
 
 function processMonthAsWeeks(monthShifts, modeForWeek = "overall") {
   if (!Array.isArray(monthShifts) || monthShifts.length === 0) {
-    return { worked: 0, breaks: 0, paid: 0, otHours: 0, basePay: 0, otPay: 0, nightHours: 0, nightPay: 0, total: 0 };
+    return { worked: 0, breaks: 0, paid: 0, otHours: 0, basePay: 0, otPay: 0, nightHours: 0, nightPay: 0, expenseTotal: 0, nightOutCount: 0, nightOutPay: 0, total: 0 };
   }
 
   const weeks = {};
@@ -1235,7 +1473,7 @@ function processMonthAsWeeks(monthShifts, modeForWeek = "overall") {
   return Object.keys(weeks)
     .sort((a, b) => new Date(a) - new Date(b))
     .reduce((acc, wk) => sumResults(acc, processShifts(weeks[wk], modeForWeek)), {
-      worked: 0, breaks: 0, paid: 0, otHours: 0, basePay: 0, otPay: 0, nightHours: 0, nightPay: 0, total: 0
+      worked: 0, breaks: 0, paid: 0, otHours: 0, basePay: 0, otPay: 0, nightHours: 0, nightPay: 0, expenseTotal: 0, nightOutCount: 0, nightOutPay: 0, total: 0
     });
 }
 
@@ -1253,6 +1491,9 @@ function processShifts(group, mode = "overall") {
 
   let nightHoursTotal = 0;
   let nightPayTotal = 0;
+  let expenseTotal = 0;
+  let nightOutCountTotal = 0;
+  let nightOutPayTotal = 0;
   const nightWeeklyPaid = new Set();
 
   // Normalize + totals + ensure baseHours/otHours exist for daily-mode logic
@@ -1260,6 +1501,9 @@ function processShifts(group, mode = "overall") {
     totalWorked += Number(s.worked || 0);
     totalBreaks += Number(s.breaks || 0);
     totalPaid += Number(s.paid || 0);
+    expenseTotal += Number(s.expenses?.parking || 0) + Number(s.expenses?.tolls || 0);
+    nightOutCountTotal += Number(s.nightOutCount || (s.nightOut ? 1 : 0) || 0);
+    nightOutPayTotal += Number(s.nightOutPay || 0);
 
     if (typeof s.baseHours !== "number" || typeof s.otHours !== "number") {
       const split = splitPaidIntoBaseAndOT_DailyWorked(s);
@@ -1276,38 +1520,17 @@ function processShifts(group, mode = "overall") {
       const profile = getShiftRateProfile(s);
       const mult = getShiftOTMultiplier(s, profile);
       const company = getCompanyById(s.companyId);
-      const nb = company?.nightBonus || { mode: "none", amount: 0, start: "22:00", end: "06:00" };
-
-      // Night bonus (per shift)
-      const nh = calcNightHoursForShift(
-        s.start,
-        s.finish,
-        nb.start || "22:00",
-        nb.end || "06:00",
-        !!s.annualLeave
-      );
-      nightHoursTotal += nh;
-
-      if (nb.mode === "per_hour") {
-        nightPayTotal += nh * (Number(nb.amount) || 0);
-      } else if (nb.mode === "per_shift") {
-        if (nh > 0) nightPayTotal += (Number(nb.amount) || 0);
-      } else if (nb.mode === "per_week") {
-        if (nh > 0) {
-          const wk = getWeekStartMonday(s.date || "");
-          const key = `${wk}|${String(s.companyId || "")}`;
-          if (!nightWeeklyPaidMonth.has(key)) {
-            nightWeeklyPaidMonth.add(key);
-            nightPayTotal += (Number(nb.amount) || 0);
-          }
-        }
-      }
+      const wk = getWeekStartMonday(s.date || "");
+      const key = `${wk}|${String(s.companyId || "")}`;
+      const bonus = calcBonusForShift(s, company, nightWeeklyPaidMonth, key);
+      nightHoursTotal += Number(bonus.bonusHours || 0);
+      nightPayTotal += Number(bonus.bonusPay || 0);
 
       if (s.bankHoliday) {
         const paid = Number(s.paid || 0);
         otPay += paid * profile.baseRate * mult;
         totalOTHours += paid;
-      } else if (s.annualLeave) {
+      } else if (s.annualLeave || s.sickDay) {
         const paid = Number(s.paid || 0);
         basePay += paid * profile.baseRate;
       } else {
@@ -1328,7 +1551,10 @@ function processShifts(group, mode = "overall") {
       otPay,
       nightHours: nightHoursTotal,
       nightPay: nightPayTotal,
-      total: basePay + otPay + nightPayTotal
+      expenseTotal,
+      nightOutCount: nightOutCountTotal,
+      nightOutPay: nightOutPayTotal,
+      total: basePay + otPay + nightPayTotal + nightOutPayTotal
     };
   }
 
@@ -1348,32 +1574,10 @@ function processShifts(group, mode = "overall") {
     const company = getCompanyById(s.companyId);
     const payMode = company?.payMode || "weekly";
 
-    // --- Night bonus calc (per shift, safe, inside loop)
-    const nb = company?.nightBonus || { mode: "none", amount: 0, start: "22:00", end: "06:00" };
-    if (typeof calcNightHoursForShift === "function") {
-      const nh = calcNightHoursForShift(
-        s.start,
-        s.finish,
-        nb.start || "22:00",
-        nb.end || "06:00",
-        !!s.annualLeave
-      );
-      nightHoursTotal += nh;
-
-      if (nb.mode === "per_hour") {
-        nightPayTotal += nh * (Number(nb.amount) || 0);
-      } else if (nb.mode === "per_shift") {
-        if (nh > 0) nightPayTotal += (Number(nb.amount) || 0);
-      } else if (nb.mode === "per_week") {
-        if (nh > 0) {
-          const key = String(s.companyId || "");
-          if (key && !nightWeeklyPaid.has(key)) {
-            nightWeeklyPaid.add(key);
-            nightPayTotal += (Number(nb.amount) || 0);
-          }
-        }
-      }
-    }
+    const bonusWeekKey = String(s.companyId || "");
+    const bonus = calcBonusForShift(s, company, nightWeeklyPaid, bonusWeekKey);
+    nightHoursTotal += Number(bonus.bonusHours || 0);
+    nightPayTotal += Number(bonus.bonusPay || 0);
 
     // --- Bank holiday: whole paid shift is OT
     if (s.bankHoliday) {
@@ -1384,7 +1588,7 @@ function processShifts(group, mode = "overall") {
     }
 
     // --- Annual leave: base pay
-    if (s.annualLeave) {
+    if (s.annualLeave || s.sickDay) {
       const paid = Number(s.paid || 0);
       basePay += paid * profile.baseRate;
       return;
@@ -1474,7 +1678,10 @@ function processShifts(group, mode = "overall") {
     otPay,
     nightHours: nightHoursTotal,
     nightPay: nightPayTotal,
-    total: basePay + otPay + nightPayTotal
+    expenseTotal,
+    nightOutCount: nightOutCountTotal,
+    nightOutPay: nightOutPayTotal,
+    total: basePay + otPay + nightPayTotal + nightOutPayTotal
   };
 }
 /* ===============================
@@ -1500,6 +1707,26 @@ function dateOnlyToDate(dateStr) {
   return new Date((dateStr || "") + "T00:00:00");
 }
 
+function getCurrentFourWeekRange() {
+  const weekStart = getCurrentWeekStartMonday();
+  const start = addDays(weekStart, -21);
+  start.setHours(0, 0, 0, 0);
+
+  const endExclusive = addDays(start, 28);
+  endExclusive.setHours(0, 0, 0, 0);
+
+  const endInclusive = addDays(start, 27);
+  endInclusive.setHours(23, 59, 59, 999);
+
+  return {
+    start,
+    endExclusive,
+    endInclusive,
+    startStr: start.toISOString().slice(0, 10),
+    endStr: endInclusive.toISOString().slice(0, 10)
+  };
+}
+
 const TILE_SPECS = {
   worked: { label: "Worked", type: "hours" },
   breaks: { label: "Breaks", type: "hours" },
@@ -1508,7 +1735,9 @@ const TILE_SPECS = {
   otHours: { label: "OT Hours", type: "hours" },
   basePay: { label: "Base Pay", type: "money" },
   otPay: { label: "OT Pay", type: "money" },
-  nightPay: { label: "Night Pay", type: "money" },
+  nightPay: { label: "Bonus Pay", type: "money" },
+  nightOutPay: { label: "Night Out Pay", type: "money" },
+  expenseTotal: { label: "Expenses", type: "money" },
   total: { label: "Total", type: "money" }
 };
 
@@ -1525,6 +1754,8 @@ function renderBreakdownTiles(targetId, titleLabel, result, order) {
   const basePay = Number(result.basePay || 0);
   const otPay = Number(result.otPay || 0);
   const nightPay = Number(result.nightPay || 0);
+  const nightOutPay = Number(result.nightOutPay || 0);
+  const expenseTotal = Number(result.expenseTotal || 0);
   const total = Number(result.total || 0);
 
   const values = {
@@ -1536,6 +1767,8 @@ function renderBreakdownTiles(targetId, titleLabel, result, order) {
     basePay,
     otPay,
     nightPay,
+    nightOutPay,
+    expenseTotal,
     total
   };
 
@@ -1563,8 +1796,11 @@ function renderCurrentPeriodTiles() {
   if (!weekTiles && !monthTiles) return;
 
   const isSummaryPage = !!document.getElementById("panelWeek");
-  const order = isSummaryPage
-    ? ["worked", "paid", "baseHours", "basePay", "otHours", "otPay", "breaks", "nightPay", "total"]
+  const weekOrder = isSummaryPage
+    ? ["worked", "paid", "baseHours", "basePay", "otHours", "otPay", "breaks", "nightPay", "nightOutPay", "expenseTotal", "total"]
+    : ["worked", "otHours", "basePay", "otPay", "nightPay", "total"];
+  const monthOrder = isSummaryPage
+    ? ["worked", "paid", "baseHours", "basePay", "otHours", "otPay", "breaks", "nightPay", "nightOutPay", "expenseTotal", "total"]
     : ["worked", "otHours", "basePay", "otPay", "nightPay", "total"];
 
   const weekStart = getCurrentWeekStartMonday();
@@ -1576,13 +1812,67 @@ function renderCurrentPeriodTiles() {
   });
 
   const weekResult = processShifts(weekShifts, "overall");
-  renderBreakdownTiles("thisWeekTiles", "", weekResult, order);
+  renderBreakdownTiles("thisWeekTiles", "", weekResult, weekOrder);
 
-  const ym = new Date().toISOString().slice(0, 7);
-  const monthShifts = shifts.filter(s => (s.date || "").slice(0, 7) === ym);
+  let monthShifts = [];
+  if (isSummaryPage && getSummaryPeriodMode() === "four_week") {
+    const r = getCurrentFourWeekRange();
+    monthShifts = shifts.filter(s => {
+      const d = dateOnlyToDate(s.date);
+      return d >= r.start && d < r.endExclusive;
+    });
+  } else {
+    const ym = new Date().toISOString().slice(0, 7);
+    monthShifts = shifts.filter(s => (s.date || "").slice(0, 7) === ym);
+  }
 
   const monthResult = processMonthAsWeeks(monthShifts, "overall");
-  renderBreakdownTiles("thisMonthTiles", "", monthResult, order);
+  renderBreakdownTiles("thisMonthTiles", "", monthResult, monthOrder);
+
+  // Index page: append annual leave taken/remaining under This Month tiles.
+  if (!isSummaryPage && monthTiles) {
+    const stats = getYearlyLeaveStats(new Date().getFullYear());
+    const remaining = Number(stats.remaining || 0);
+    const remainingText = remaining >= 0
+      ? `${remaining.toFixed(0)} days`
+      : `-${Math.abs(remaining).toFixed(0)} days`;
+
+    monthTiles.insertAdjacentHTML("beforeend", `
+      <div class="tile"><div class="label">Leave Taken</div><div class="value">${Number(stats.annualLeaveTaken || 0).toFixed(0)} days</div></div>
+      <div class="tile"><div class="label">Leave Remaining</div><div class="value">${remainingText}</div></div>
+    `);
+  }
+}
+
+function getYearlyLeaveStats(year = new Date().getFullYear()) {
+  const y = Number(year || new Date().getFullYear());
+  const inYear = shifts.filter(s => Number((s.date || "").slice(0, 4)) === y);
+  const annualLeaveTaken = inYear.filter(s => !!s.annualLeave).length;
+  const sickDaysTaken = inYear.filter(s => !!s.sickDay).length;
+  const allowance = Number(settings.annualLeaveAllowance || 0);
+  const remaining = allowance - annualLeaveTaken;
+
+  return { year: y, annualLeaveTaken, sickDaysTaken, allowance, remaining };
+}
+
+function renderLeaveStats() {
+  const el = document.getElementById("leaveStats");
+  if (!el) return;
+
+  const stats = getYearlyLeaveStats(new Date().getFullYear());
+  const remText = stats.remaining >= 0
+    ? `${stats.remaining} days remaining`
+    : `${Math.abs(stats.remaining)} days over allowance`;
+
+  el.innerHTML = `
+    <div class="grid">
+      <div class="tile"><div class="label">Year</div><div class="value">${stats.year}</div></div>
+      <div class="tile"><div class="label">Annual Leave Allowance</div><div class="value">${Number(stats.allowance).toFixed(0)} days</div></div>
+      <div class="tile"><div class="label">Annual Leave Taken</div><div class="value">${Number(stats.annualLeaveTaken).toFixed(0)} days</div></div>
+      <div class="tile"><div class="label">Annual Leave Balance</div><div class="value">${escapeHtml(remText)}</div></div>
+      <div class="tile"><div class="label">Sick Days Taken</div><div class="value">${Number(stats.sickDaysTaken).toFixed(0)} days</div></div>
+    </div>
+  `;
 }
 
 /* ===============================
@@ -1594,17 +1884,28 @@ function renderCompanySummary() {
   if (!container) return;
 
   ensureDefaultCompany();
+  const summaryMode = getSummaryPeriodMode();
+  const monthLabel = summaryMode === "four_week" ? "Last 4 Weeks" : "This Month";
 
   const weekStart = getCurrentWeekStartMonday();
   const weekEnd = addDays(weekStart, 7);
-  const ym = new Date().toISOString().slice(0, 7);
 
   const weekShifts = shifts.filter(s => {
     const d = dateOnlyToDate(s.date);
     return d >= weekStart && d < weekEnd;
   });
 
-  const monthShifts = shifts.filter(s => (s.date || "").slice(0, 7) === ym);
+  let monthShifts = [];
+  if (summaryMode === "four_week") {
+    const r = getCurrentFourWeekRange();
+    monthShifts = shifts.filter(s => {
+      const d = dateOnlyToDate(s.date);
+      return d >= r.start && d < r.endExclusive;
+    });
+  } else {
+    const ym = new Date().toISOString().slice(0, 7);
+    monthShifts = shifts.filter(s => (s.date || "").slice(0, 7) === ym);
+  }
 
   const groupByCompany = (arr) => {
     const out = {};
@@ -1629,7 +1930,7 @@ function renderCompanySummary() {
   });
 
   if (!ordered.length) {
-    container.innerHTML = `<div class="shift-card">No company data yet for this week/month.</div>`;
+    container.innerHTML = `<div class="shift-card">No company data yet for this week/${escapeHtml(monthLabel.toLowerCase())}.</div>`;
     return;
   }
 
@@ -1646,10 +1947,13 @@ function renderCompanySummary() {
         Paid: ${paid.toFixed(2)} hrs<br>
         Base Hours: ${baseH.toFixed(2)} hrs<br>
         OT Hours: ${otH.toFixed(2)} hrs<br>
-        Night Pay: £${Number(r.nightPay || 0).toFixed(2)}<br>
+        Bonus Pay: £${Number(r.nightPay || 0).toFixed(2)}<br>
+        Night Out Pay: £${Number(r.nightOutPay || 0).toFixed(2)} (${Number(r.nightOutCount || 0).toFixed(0)} nights)<br>
+        Expenses: £${Number(r.expenseTotal || 0).toFixed(2)}<br>
         Base Pay: £${Number(r.basePay || 0).toFixed(2)}<br>
         OT Pay: £${Number(r.otPay || 0).toFixed(2)}<br>
-        Total: £${Number(r.total || 0).toFixed(2)}
+        Total: £${Number(r.total || 0).toFixed(2)}<br>
+        Net After Expenses: £${(Number(r.total || 0) - Number(r.expenseTotal || 0)).toFixed(2)}
       </div>
     `;
   };
@@ -1663,11 +1967,11 @@ function renderCompanySummary() {
       <div class="week-group">
         <div class="week-header" onclick="toggleCompanySummary('${cid}')">
           <span>${escapeHtml(name)}</span>
-          <span class="small">Week £${Number(w.total || 0).toFixed(2)} • Month £${Number(m.total || 0).toFixed(2)}</span>
+          <span class="small">Week £${Number(w.total || 0).toFixed(2)} • ${escapeHtml(monthLabel)} £${Number(m.total || 0).toFixed(2)}</span>
         </div>
         <div class="week-content" id="cmp-${cid}" style="display:none;">
           ${line("This Week", w)}
-          ${line("This Month", m)}
+          ${line(monthLabel, m)}
         </div>
       </div>
     `;
@@ -1682,23 +1986,38 @@ function toggleCompanySummary(companyId) {
 
 function updateCompanyFormVisibility() {
   const payModeEl = document.getElementById("payMode");
-  const nbModeEl = document.getElementById("nightBonusMode");
-  if (!payModeEl && !nbModeEl) return; // not on companies page
+  const bonusTypeEl = document.getElementById("bonusType");
+  if (!payModeEl && !bonusTypeEl) return; // not on companies page
 
-  const dailyOTRow = document.getElementById("dailyOTRow");
-  const nightWindow = document.getElementById("nightBonusWindow");
+  const dailyOTRow = document.getElementById("dailyOtFields") || document.getElementById("dailyOTRow");
+  const bonusModeWrap = document.getElementById("bonusModeWrap");
+  const bonusWindow = document.getElementById("bonusWindow");
+  const bonusModeEl = document.getElementById("bonusMode");
+  const bonusAmountLabel = document.getElementById("bonusAmountLabel");
 
   if (dailyOTRow) {
     dailyOTRow.hidden = (payModeEl?.value !== "daily");
   }
 
-  if (nightWindow) {
-    nightWindow.hidden = (nbModeEl?.value === "none");
+  const bonusType = bonusTypeEl?.value || "none";
+  const bonusMode = bonusModeEl?.value || "per_hour";
+  if (bonusModeWrap) {
+    bonusModeWrap.hidden = (bonusType !== "night_window");
+  }
+  if (bonusWindow) {
+    bonusWindow.hidden = !(bonusType === "night_window" && bonusMode === "per_hour");
+  }
+  if (bonusAmountLabel) {
+    if (bonusType === "night_window" && bonusMode === "per_hour") {
+      bonusAmountLabel.textContent = "Bonus Amount Per Hour (£)";
+    } else {
+      bonusAmountLabel.textContent = "Bonus Amount (£)";
+    }
   }
 }
 
 document.addEventListener("change", (e) => {
-  if (e.target?.id === "payMode" || e.target?.id === "nightBonusMode") {
+  if (e.target?.id === "payMode" || e.target?.id === "bonusType" || e.target?.id === "bonusMode") {
     updateCompanyFormVisibility();
   }
 });
@@ -1736,10 +2055,13 @@ function renderWeekly() {
           Breaks: ${Number(r.breaks || 0).toFixed(2)} hrs<br>
           Paid: ${Number(r.paid || 0).toFixed(2)} hrs<br>
           OT Hours: ${Number(r.otHours || 0).toFixed(2)}<br>
-          Night Pay: £${Number(r.nightPay || 0).toFixed(2)}<br>
+          Bonus Pay: £${Number(r.nightPay || 0).toFixed(2)}<br>
+          Night Out Pay: £${Number(r.nightOutPay || 0).toFixed(2)} (${Number(r.nightOutCount || 0).toFixed(0)} nights)<br>
+          Expenses: £${Number(r.expenseTotal || 0).toFixed(2)}<br>
           Base: £${Number(r.basePay || 0).toFixed(2)}<br>
           OT: £${Number(r.otPay || 0).toFixed(2)}<br>
-          Total: £${Number(r.total || 0).toFixed(2)}
+          Total: £${Number(r.total || 0).toFixed(2)}<br>
+          Net: £${(Number(r.total || 0) - Number(r.expenseTotal || 0)).toFixed(2)}
         </div>
       `;
     }).join("");
@@ -1769,10 +2091,13 @@ function renderMonthly() {
           Breaks: ${Number(r.breaks || 0).toFixed(2)} hrs<br>
           Paid: ${Number(r.paid || 0).toFixed(2)} hrs<br>
           OT Hours: ${Number(r.otHours || 0).toFixed(2)}<br>
-          Night Pay: £${Number(r.nightPay || 0).toFixed(2)}<br>
+          Bonus Pay: £${Number(r.nightPay || 0).toFixed(2)}<br>
+          Night Out Pay: £${Number(r.nightOutPay || 0).toFixed(2)} (${Number(r.nightOutCount || 0).toFixed(0)} nights)<br>
+          Expenses: £${Number(r.expenseTotal || 0).toFixed(2)}<br>
           Base: £${Number(r.basePay || 0).toFixed(2)}<br>
           OT: £${Number(r.otPay || 0).toFixed(2)}<br>
-          Total: £${Number(r.total || 0).toFixed(2)}
+          Total: £${Number(r.total || 0).toFixed(2)}<br>
+          Net: £${(Number(r.total || 0) - Number(r.expenseTotal || 0)).toFixed(2)}
         </div>
       `;
     }).join("");
@@ -1794,7 +2119,8 @@ function getWeekStartMonday(dateStr) {
 
 function formatShiftLine(s, index) {
   const companyName = getCompanyById(s.companyId)?.name || "Unknown Company";
-  const flags = [s.shiftType === "night" ? "NIGHT" : "", s.annualLeave ? "AL" : "", s.bankHoliday ? "BH" : ""].filter(Boolean).join(" ");
+  const flags = [s.shiftType === "night" ? "NIGHT" : "", s.annualLeave ? "AL" : "", s.sickDay ? "SICK" : "", s.bankHoliday ? "BH" : ""].filter(Boolean).join(" ");
+  const expenses = Number(s.expenses?.parking || 0) + Number(s.expenses?.tolls || 0);
 
   const defects = (s.defects || "").trim();
   const defectsPreview = defects.length > 80 ? defects.slice(0, 80) + "…" : defects;
@@ -1809,6 +2135,8 @@ function formatShiftLine(s, index) {
         ${s.trailer1 ? `<div>Trailer 1: ${escapeHtml(s.trailer1)}</div>` : ""}
         ${s.trailer2 ? `<div>Trailer 2: ${escapeHtml(s.trailer2)}</div>` : ""}
         ${(Number(s.mileage || 0) > 0) ? `<div>Mileage: ${Number(s.startMileage || 0).toFixed(0)} → ${Number(s.finishMileage || 0).toFixed(0)} (${Number(s.mileage || 0).toFixed(0)} miles)</div>` : ""}
+        ${(Number(s.nightOutPay || 0) > 0 || Number(s.nightOutCount || 0) > 0) ? `<div>Night Out: ${Number(s.nightOutCount || 0).toFixed(0)} • Pay: £${Number(s.nightOutPay || 0).toFixed(2)}</div>` : ""}
+        ${expenses > 0 ? `<div>Expenses: £${expenses.toFixed(2)} (Parking £${Number(s.expenses?.parking || 0).toFixed(2)} • Tolls £${Number(s.expenses?.tolls || 0).toFixed(2)})</div>` : ""}
         <div>Worked: ${Number(s.worked || 0).toFixed(2)} • Breaks: ${Number(s.breaks || 0).toFixed(2)} • Paid: ${Number(s.paid || 0).toFixed(2)}</div>
         ${defects ? `<div>Defects/Notes: ${escapeHtml(defectsPreview)}</div>` : ""}
         ${defects && defects.length > 80 ? `<details style="margin-top:8px;"><summary class="small">View full defects/notes</summary><div style="margin-top:8px;">${escapeHtml(defects).replaceAll("\n","<br>")}</div></details>` : ""}
@@ -1915,6 +2243,8 @@ function loadShiftForEditingIfRequested() {
   setVal("startMileage", s.startMileage || 0);
   setVal("finishMileage", s.finishMileage || 0);
   setVal("mileageDone", s.mileage || 0);
+  setVal("expenseParking", s.expenses?.parking || 0);
+  setVal("expenseTolls", s.expenses?.tolls || 0);
   setVal("company", s.companyId);
   applyCompanyShiftEntryVisibility(s.companyId);
   renderVehicleMenuOptions(s.vehicle || "");
@@ -1923,7 +2253,10 @@ function loadShiftForEditingIfRequested() {
   if (defectsEl) defectsEl.value = (s.defects ?? s.notes ?? "");
 
   setCheck("annualLeave", s.annualLeave);
+  setCheck("sickDay", s.sickDay);
   setCheck("bankHoliday", s.bankHoliday);
+  setCheck("nightOut", s.nightOut || Number(s.nightOutCount || 0) > 0 || Number(s.nightOutPay || 0) > 0);
+  initNightOutBehavior();
 }
 
 /* ===============================
@@ -1974,6 +2307,7 @@ function restoreBackup(event) {
       loadSettings();
       renderCompanySummary();
       renderCurrentPeriodTiles();
+      renderLeaveStats();
       if (typeof renderWeeklyGroupedShifts === "function") renderWeeklyGroupedShifts();
     } catch (err) {
       alert("That backup file looks invalid or corrupted.");
@@ -2089,16 +2423,19 @@ function buildPayslipHTML({ title, periodLabel, periodStart, periodEnd, overall,
           <td class="right">${fmtHours(baseH)}</td>
           <td class="right">${fmtHours(r.otHours)}</td>
           <td class="right">${fmtMoney(r.nightPay || 0)}</td>
+          <td class="right">${fmtMoney(r.nightOutPay || 0)}</td>
+          <td class="right">${fmtMoney(r.expenseTotal || 0)}</td>
           <td class="right">${fmtMoney(r.basePay)}</td>
           <td class="right">${fmtMoney(r.otPay)}</td>
-          <td class="right"><strong>${fmtMoney(r.total)}</strong></td>
+          <td class="right"><strong>${fmtMoney(r.total)}</strong><div class="small">Net ${fmtMoney((Number(r.total || 0) - Number(r.expenseTotal || 0)))}</div></td>
         </tr>
       `;
     }).join("");
 
   const shiftRows = rows.map(s => {
     const companyName = getCompanyById(s.companyId)?.name || "Unknown Company";
-    const flags = [s.annualLeave ? "AL" : "", s.bankHoliday ? "BH" : ""].filter(Boolean).join(" ");
+    const flags = [s.annualLeave ? "AL" : "", s.sickDay ? "SICK" : "", s.bankHoliday ? "BH" : ""].filter(Boolean).join(" ");
+    const expenses = Number(s.expenses?.parking || 0) + Number(s.expenses?.tolls || 0);
     return `
       <tr>
         <td><strong>${escapeHtml(s.date)}</strong>${flags ? `<div class="small">${escapeHtml(flags)}</div>` : ""}</td>
@@ -2108,6 +2445,8 @@ function buildPayslipHTML({ title, periodLabel, periodStart, periodEnd, overall,
         <td class="right">${fmtHours(s.worked)}</td>
         <td class="right">${fmtHours(s.breaks)}</td>
         <td class="right">${fmtHours(s.paid)}</td>
+        <td class="right">${fmtMoney(s.nightOutPay || 0)}</td>
+        <td class="right">${fmtMoney(expenses)}</td>
         <td class="right">${fmtMoney(s.__payTotal || 0)}</td>
       </tr>
     `;
@@ -2144,7 +2483,9 @@ function buildPayslipHTML({ title, periodLabel, periodStart, periodEnd, overall,
             <div class="kpi"><div class="l">OT Hours</div><div class="v">${fmtHours(overall.otHours)}</div></div>
 
             <div class="kpi"><div class="l">Base Hours</div><div class="v">${fmtHours(baseHours)}</div></div>
-            <div class="kpi"><div class="l">Night Pay</div><div class="v">${fmtMoney(overall.nightPay || 0)}</div></div>
+            <div class="kpi"><div class="l">Bonus Pay</div><div class="v">${fmtMoney(overall.nightPay || 0)}</div></div>
+            <div class="kpi"><div class="l">Night Out Pay</div><div class="v">${fmtMoney(overall.nightOutPay || 0)}</div></div>
+            <div class="kpi"><div class="l">Expenses</div><div class="v">${fmtMoney(overall.expenseTotal || 0)}</div></div>
             <div class="kpi"><div class="l">Base Pay</div><div class="v">${fmtMoney(overall.basePay)}</div></div>
             <div class="kpi"><div class="l">OT Pay</div><div class="v">${fmtMoney(overall.otPay)}</div></div>
           </div>
@@ -2153,8 +2494,11 @@ function buildPayslipHTML({ title, periodLabel, periodStart, periodEnd, overall,
             <div class="box">
               <div class="row"><span>Base Pay</span><span>${fmtMoney(overall.basePay)}</span></div>
               <div class="row"><span>Overtime Pay</span><span>${fmtMoney(overall.otPay)}</span></div>
-              <div class="row"><span>Night Pay</span><span>${fmtMoney(overall.nightPay || 0)}</span></div>
+              <div class="row"><span>Bonus Pay</span><span>${fmtMoney(overall.nightPay || 0)}</span></div>
+              <div class="row"><span>Night Out Pay</span><span>${fmtMoney(overall.nightOutPay || 0)}</span></div>
+              <div class="row"><span>Expenses</span><span>${fmtMoney(overall.expenseTotal || 0)}</span></div>
               <div class="row"><strong>Total</strong><strong>${fmtMoney(overall.total)}</strong></div>
+              <div class="row"><strong>Net</strong><strong>${fmtMoney(Number(overall.total || 0) - Number(overall.expenseTotal || 0))}</strong></div>
               <div class="small" style="margin-top:8px;">Note: Calculation summary only. Verify against payslips/invoices.</div>
             </div>
           </div>
@@ -2169,14 +2513,16 @@ function buildPayslipHTML({ title, periodLabel, periodStart, periodEnd, overall,
                 <th class="right">Paid</th>
                 <th class="right">Base Hrs</th>
                 <th class="right">OT Hrs</th>
-                <th class="right">Night Pay</th>
+                <th class="right">Bonus Pay</th>
+                <th class="right">Night Out Pay</th>
+                <th class="right">Expenses</th>
                 <th class="right">Base Pay</th>
                 <th class="right">OT Pay</th>
                 <th class="right">Total</th>
               </tr>
             </thead>
             <tbody>
-              ${companyRows || `<tr><td colspan="10" class="small">No company data for this period.</td></tr>`}
+              ${companyRows || `<tr><td colspan="12" class="small">No company data for this period.</td></tr>`}
             </tbody>
           </table>
 
@@ -2191,11 +2537,13 @@ function buildPayslipHTML({ title, periodLabel, periodStart, periodEnd, overall,
                 <th class="right">Worked</th>
                 <th class="right">Breaks</th>
                 <th class="right">Paid</th>
+                <th class="right">Night Out</th>
+                <th class="right">Expenses</th>
                 <th class="right">Pay</th>
               </tr>
             </thead>
             <tbody>
-              ${shiftRows || `<tr><td colspan="8" class="small">No shifts in this period.</td></tr>`}
+              ${shiftRows || `<tr><td colspan="10" class="small">No shifts in this period.</td></tr>`}
             </tbody>
           </table>
         </div>
@@ -2214,13 +2562,26 @@ function exportPayslip(period = "week") {
   let overall;
 
   if (period === "month") {
-    const r = getMonthRangeForDate(new Date());
-    periodLabel = "Month";
-    periodStart = r.startStr;
-    periodEnd = r.endStr;
+    if (getSummaryPeriodMode() === "four_week") {
+      const r = getCurrentFourWeekRange();
+      periodLabel = "4 Weeks";
+      periodStart = r.startStr;
+      periodEnd = r.endStr;
 
-    periodShifts = shifts.filter(s => (s.date || "").slice(0, 7) === r.ym);
-    overall = processShifts(periodShifts, "monthOverall");
+      periodShifts = shifts.filter(s => {
+        const d = dateOnlyToDate(s.date);
+        return d >= r.start && d < r.endExclusive;
+      });
+      overall = processMonthAsWeeks(periodShifts, "overall");
+    } else {
+      const r = getMonthRangeForDate(new Date());
+      periodLabel = "Month";
+      periodStart = r.startStr;
+      periodEnd = r.endStr;
+
+      periodShifts = shifts.filter(s => (s.date || "").slice(0, 7) === r.ym);
+      overall = processMonthAsWeeks(periodShifts, "overall");
+    }
   } else {
     const r = getWeekRangeForDate(new Date());
     periodLabel = "Week (Mon–Sun)";
@@ -2239,7 +2600,7 @@ function exportPayslip(period = "week") {
   Object.keys(grouped).forEach(cid => {
     if (!cid) return;
     byCompany[cid] = (period === "month")
-      ? processShifts(grouped[cid], "monthOverall")
+      ? processMonthAsWeeks(grouped[cid], "perCompany")
       : processShifts(grouped[cid], "perCompany");
   });
 
@@ -2267,13 +2628,12 @@ function exportPayslip(period = "week") {
         linePay = (Number(baseH || 0) * profile.baseRate) + (Number(otH || 0) * profile.baseRate * mult);
       }
 
-      // add night pay estimate on the line
+      // add bonus estimate on the line
       const company = getCompanyById(s.companyId);
-      const nb = company?.nightBonus || { mode: "none", amount: 0, start: "22:00", end: "06:00" };
-      const nh = calcNightHoursForShift(s.start, s.finish, nb.start, nb.end, !!s.annualLeave);
-      if (nb.mode === "per_hour") linePay += nh * Number(nb.amount || 0);
-      else if (nb.mode === "per_shift") { if (nh > 0) linePay += Number(nb.amount || 0); }
-      // per_week can’t be reliably allocated per line, so we leave it out of shift line pay (it still appears in totals)
+      const bonus = calcBonusForShift(s, company, new Set(), "");
+      linePay += Number(bonus.bonusPay || 0);
+      linePay += Number(s.nightOutPay || 0);
+      // per-week bonus can’t be reliably allocated per line, so it remains excluded from line pay.
 
       return { ...s, __payTotal: linePay };
     });
@@ -2316,6 +2676,7 @@ function renderAll() {
 ================================ */
 
 document.addEventListener("DOMContentLoaded", () => {
+  initNavMenu();
   ensureDefaultCompany();
 
   // Basic lists
@@ -2331,11 +2692,14 @@ document.addEventListener("DOMContentLoaded", () => {
   loadShiftForEditingIfRequested();
   initShiftTypeBehavior();
   initMileageBehavior();
+  initLeaveCheckboxBehavior();
+  initNightOutBehavior();
   applyDefaultsToShiftEntry();
 
   // Summary page
   renderCurrentPeriodTiles();
   renderCompanySummary();
+  renderLeaveStats();
 
   // General blocks
   renderAll();
@@ -2501,4 +2865,35 @@ async function checkForUpdates() {
       setUpdateStatus("You're up to date.");
     }
   }, 2000);
+}
+
+function initNavMenu() {
+  const nav = document.querySelector(".nav");
+  const btn = document.getElementById("navMenuBtn");
+  const menu = document.getElementById("navMenu");
+  if (!nav || !btn || !menu) return;
+
+  const closeMenu = () => {
+    menu.hidden = true;
+    btn.setAttribute("aria-expanded", "false");
+  };
+  const openMenu = () => {
+    menu.hidden = false;
+    btn.setAttribute("aria-expanded", "true");
+  };
+  const toggleMenu = () => {
+    if (menu.hidden) openMenu();
+    else closeMenu();
+  };
+
+  btn.addEventListener("click", toggleMenu);
+  menu.addEventListener("click", (e) => {
+    if (e.target.closest("a")) closeMenu();
+  });
+  document.addEventListener("click", (e) => {
+    if (!nav.contains(e.target)) closeMenu();
+  });
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape") closeMenu();
+  });
 }

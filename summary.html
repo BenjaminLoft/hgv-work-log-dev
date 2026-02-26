@@ -14,13 +14,18 @@
 <body>
 
 <nav class="nav">
-  <a href="index.html">Home</a>
-  <a href="enter-shift.html">Enter Shift</a>
-  <a href="summary.html">Summary</a>
-  <a href="shifts.html">All Shifts</a>
-  <a href="companies.html">Companies</a>
-  <a href="vehicles.html">Vehicles</a>
-  <a href="settings.html">Settings</a>
+  <a href="index.html" class="nav-home" aria-label="Home">⌂</a>
+  <button id="navMenuBtn" class="nav-menu-btn" type="button" aria-expanded="false" aria-controls="navMenu" aria-label="Open navigation">☰</button>
+  <div id="navMenu" class="nav-menu" hidden>
+    <a href="index.html">Home</a>
+    <a href="enter-shift.html">Enter Shift</a>
+    <a href="summary.html">Summary</a>
+    <a href="shifts.html">All Shifts</a>
+    <a href="companies.html">Companies</a>
+    <a href="vehicles.html">Vehicles</a>
+    <a href="settings.html">Settings</a>
+    <a href="user-guide.html">User Guide</a>
+  </div>
 </nav>
 
 <div class="container">
@@ -57,21 +62,30 @@
 
 	<!-- MONTH PANEL -->
 	<section id="panelMonth" class="section" role="tabpanel" aria-labelledby="tabMonth" style="display:none;">
-	  <h2>Month</h2>
+	  <h2 id="summaryPeriodLabel">Month</h2>
+	  <div class="segmented" role="tablist" aria-label="Pay period mode">
+		<button id="periodMonthBtn" class="seg-btn is-active" type="button" onclick="setSummaryPeriodMode('month')">Monthly</button>
+		<button id="periodFourWeekBtn" class="seg-btn" type="button" onclick="setSummaryPeriodMode('four_week')">4-Weekly</button>
+	  </div>
 	  <div class="grid" id="thisMonthTiles"></div>
 
 	  <div class="button-row">
-		<button onclick="exportPayslip('month')">Export Month Payslip (PDF)</button>
+		<button id="exportSummaryPeriodBtn" onclick="exportPayslip('month')">Export Month Payslip (PDF)</button>
 		<button class="button-secondary" onclick="exportSection('monthlySummary')">Export Monthly (Simple)</button>
 	  </div>
 
 	  <details class="details" style="margin-top:14px;">
-		<summary>Monthly breakdown</summary>
+		<summary id="monthlyBreakdownSummary">Monthly breakdown</summary>
 		<div style="margin-top:12px;">
 		  <div id="monthlySummary"></div>
 		</div>
 	  </details>
 	</section>
+
+	<div class="section">
+	  <h2>Leave & Sickness</h2>
+	  <div id="leaveStats"></div>
+	</div>
 
 	<div class="section">
 	  <h2>By Company</h2>

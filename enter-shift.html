@@ -14,13 +14,18 @@
 <body>
 
 <nav class="nav">
-  <a href="index.html">Home</a>
-  <a href="enter-shift.html">Enter Shift</a>
-  <a href="summary.html">Summary</a>
-  <a href="shifts.html">All Shifts</a>
-  <a href="companies.html">Companies</a>
-  <a href="vehicles.html">Vehicles</a>
-  <a href="settings.html">Settings</a>
+  <a href="index.html" class="nav-home" aria-label="Home">⌂</a>
+  <button id="navMenuBtn" class="nav-menu-btn" type="button" aria-expanded="false" aria-controls="navMenu" aria-label="Open navigation">☰</button>
+  <div id="navMenu" class="nav-menu" hidden>
+    <a href="index.html">Home</a>
+    <a href="enter-shift.html">Enter Shift</a>
+    <a href="summary.html">Summary</a>
+    <a href="shifts.html">All Shifts</a>
+    <a href="companies.html">Companies</a>
+    <a href="vehicles.html">Vehicles</a>
+    <a href="settings.html">Settings</a>
+    <a href="user-guide.html">User Guide</a>
+  </div>
 </nav>
 
 <div class="container">
@@ -43,11 +48,16 @@
     <label>Date</label>
     <input type="date" id="date">
 
-    <label>Start Time</label>
-    <input type="time" id="start">
-
-    <label>Finish Time</label>
-    <input type="time" id="finish">
+    <div class="grid">
+      <div>
+        <label>Start Time</label>
+        <input type="time" id="start">
+      </div>
+      <div>
+        <label>Finish Time</label>
+        <input type="time" id="finish">
+      </div>
+    </div>
 
     <div id="shiftVehicleRow">
       <label>Vehicle</label>
@@ -66,11 +76,16 @@
     </div>
 
     <div id="shiftMileageRows">
-      <label>Start Mileage</label>
-      <input type="number" id="startMileage" min="0" step="1" placeholder="e.g. 124000">
-
-      <label>Finish Mileage</label>
-      <input type="number" id="finishMileage" min="0" step="1" placeholder="e.g. 124320">
+      <div class="grid">
+        <div>
+          <label>Start Mileage</label>
+          <input type="number" id="startMileage" min="0" step="1" placeholder="e.g. 124000">
+        </div>
+        <div>
+          <label>Finish Mileage</label>
+          <input type="number" id="finishMileage" min="0" step="1" placeholder="e.g. 124320">
+        </div>
+      </div>
 
       <label>Mileage Done</label>
       <input type="number" id="mileageDone" min="0" step="1" readonly>
@@ -85,8 +100,32 @@
     </div>
 
     <div class="checkbox-row">
+      <input type="checkbox" id="sickDay">
+      <span>Sick Day (9 hrs)</span>
+    </div>
+
+    <div class="checkbox-row">
       <input type="checkbox" id="bankHoliday">
       <span>Bank Holiday</span>
+    </div>
+
+    <h2 style="margin-top:16px;">Night Out</h2>
+    <div class="checkbox-row">
+      <input type="checkbox" id="nightOut">
+      <span>Night Out</span>
+    </div>
+    <div class="small" id="nightOutPayInfo" style="margin-top:8px;"></div>
+
+    <h2 style="margin-top:16px;">Expenses</h2>
+    <div class="grid">
+      <div>
+        <label>Parking (£)</label>
+        <input type="number" id="expenseParking" min="0" step="0.01" placeholder="0.00">
+      </div>
+      <div>
+        <label>Road Tolls (£)</label>
+        <input type="number" id="expenseTolls" min="0" step="0.01" placeholder="0.00">
+      </div>
     </div>
 
     <!-- Advanced / Overrides -->

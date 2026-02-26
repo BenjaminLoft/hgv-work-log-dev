@@ -14,21 +14,23 @@
 <body>
 
 <nav class="nav">
-  <a href="index.html">Home</a>
-  <a href="enter-shift.html">Enter Shift</a>
-  <a href="summary.html">Summary</a>
-  <a href="shifts.html">All Shifts</a>
-  <a href="companies.html">Companies</a>
-  <a href="vehicles.html">Vehicles</a>
-  <a href="settings.html">Settings</a>
+  <a href="index.html" class="nav-home" aria-label="Home">⌂</a>
+  <button id="navMenuBtn" class="nav-menu-btn" type="button" aria-expanded="false" aria-controls="navMenu" aria-label="Open navigation">☰</button>
+  <div id="navMenu" class="nav-menu" hidden>
+    <a href="index.html">Home</a>
+    <a href="enter-shift.html">Enter Shift</a>
+    <a href="summary.html">Summary</a>
+    <a href="shifts.html">All Shifts</a>
+    <a href="companies.html">Companies</a>
+    <a href="vehicles.html">Vehicles</a>
+    <a href="settings.html">Settings</a>
+    <a href="user-guide.html">User Guide</a>
+  </div>
 </nav>
 
 <div class="container">
   <div class="screen">
     <h1>HGV Work Log</h1>
-    <div class="small" style="margin-top:-6px;">
-      Quick overview + setup checks. No spreadsheets harmed in the making of this page.
-    </div>
 
     <div class="shift-card" id="gettingStartedCard" style="margin-top:14px;">
       <strong>Getting started</strong>
@@ -47,7 +49,7 @@
       </div>
     </div>
 
-    <h2 style="margin-top:18px;">At a Glance</h2>
+    <h2 style="margin-top:18px; font-size:24px;">At a Glance</h2>
 
     <h2 style="margin-top:12px;">This Week</h2>
     <div class="grid" id="thisWeekTiles"></div>
