@@ -224,9 +224,14 @@ input, select, textarea{
 
 /* iOS: date/time sometimes get "intrinsic" width */
 input[type="date"],
-input[type="time"]{
+input[type="time"],
+input[type="week"],
+input[type="month"]{
   -webkit-appearance: none;
   appearance: none;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
 }
 
 textarea{ min-height: 96px; resize: vertical; }
@@ -381,6 +386,11 @@ button:active{ transform: scale(0.99); }
 /* Shifts calendar */
 .calendar-controls{
   margin-top: 10px;
+}
+.calendar-controls input{
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
 }
 
 .calendar-legend{
