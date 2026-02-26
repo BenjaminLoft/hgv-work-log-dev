@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>User Guide</title>
+  <link rel="stylesheet" href="styles.css">
+  <link rel="manifest" href="manifest.json">
+  <meta name="theme-color" content="#0b1220">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Work Log">
+  <link rel="apple-touch-icon" href="icons/icon-192.png">
+</head>
+<body>
+
+<nav class="nav">
+  <a href="index.html" class="nav-home" aria-label="Home">⌂</a>
+  <button id="navMenuBtn" class="nav-menu-btn" type="button" aria-expanded="false" aria-controls="navMenu" aria-label="Open navigation">☰</button>
+  <div id="navMenu" class="nav-menu" hidden>
+    <a href="index.html">Home</a>
+    <a href="enter-shift.html">Enter Shift</a>
+    <a href="summary.html">Summary</a>
+    <a href="shifts.html">All Shifts</a>
+    <a href="companies.html">Companies</a>
+    <a href="vehicles.html">Vehicles</a>
+    <a href="settings.html">Settings</a>
+    <a href="user-guide.html">User Guide</a>
+  </div>
+</nav>
+
+<div class="container">
+  <div class="screen">
+    <h1>User Guide</h1>
+
+    <h2>Getting Started</h2>
+    <div class="shift-card">
+      <strong>1. Set up companies</strong>
+      <div class="meta">Go to Companies and create your employer/agency profiles. Set pay mode, overtime, and bonus rules.</div>
+    </div>
+    <div class="shift-card">
+      <strong>2. Add vehicles</strong>
+      <div class="meta">Use Vehicles page to add registrations, then assign vehicles to each company.</div>
+    </div>
+    <div class="shift-card">
+      <strong>3. Configure defaults</strong>
+      <div class="meta">In Settings, set default start/finish times, leave allowance, and default night-out pay.</div>
+    </div>
+    <div class="shift-card">
+      <strong>4. Enter shifts</strong>
+      <div class="meta">Use Enter Shift for work days, annual leave, sick days, mileage, expenses, and night-out pay.</div>
+    </div>
+    <div class="shift-card">
+      <strong>5. Review summaries</strong>
+      <div class="meta">Open Summary for week/month or 4-weekly views, company breakdowns, and PDF export.</div>
+    </div>
+
+    <h2 style="margin-top:18px;">Full Guide</h2>
+    <div class="shift-card">
+      <strong>Companies</strong>
+      <div class="meta">Each company stores rate, overtime multipliers, pay mode (weekly/daily), bonus settings, and field visibility toggles for vehicle/trailers/mileage.</div>
+    </div>
+    <div class="shift-card">
+      <strong>Vehicle Assignment</strong>
+      <div class="meta">Vehicles are assigned per company. Enter Shift only shows vehicles assigned to the selected company, but new typed registrations are saved and assigned automatically.</div>
+    </div>
+    <div class="shift-card">
+      <strong>Shift Types and Leave</strong>
+      <div class="meta">Day/Night shift flag is stored. Night sets default date to previous day on new entries. Annual Leave and Sick Day are mutually exclusive and counted in yearly stats.</div>
+    </div>
+    <div class="shift-card">
+      <strong>Mileage, Expenses, and Night Out</strong>
+      <div class="meta">Mileage is calculated from start and finish mileage when enabled by company. Expenses track parking and tolls. Night-out pay is tracked and included in totals.</div>
+    </div>
+    <div class="shift-card">
+      <strong>Summary and Payslip Export</strong>
+      <div class="meta">Summary supports weekly and month panel views, with monthly/4-weekly toggle. Export creates a print-ready summary including pay components and net after expenses.</div>
+    </div>
+    <div class="shift-card">
+      <strong>Backup and Restore</strong>
+      <div class="meta">Use Settings or Summary backup tools. Restore automatically migrates older backups to the current data model.</div>
+    </div>
+  </div>
+</div>
+
+<script src="app.js"></script>
+</body>
+</html>
