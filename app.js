@@ -274,6 +274,35 @@ function initSummaryTabs() {
   })();
 
   setSummaryTab(saved === "month" ? "month" : "week");
+  syncSummaryPeriodModeUI();
+}
+
+function getSummaryPeriodMode() {
+  const mode = String(settings?.summaryPeriodMode || "month");
+  return (mode === "four_week") ? "four_week" : "month";
+}
+
+function setSummaryPeriodMode(mode) {
+  settings.summaryPeriodMode = (mode === "four_week") ? "four_week" : "month";
+  saveAll();
+  syncSummaryPeriodModeUI();
+  renderCurrentPeriodTiles();
+  renderCompanySummary();
+}
+
+function syncSummaryPeriodModeUI() {
+  const mode = getSummaryPeriodMode();
+  const monthBtn = document.getElementById("periodMonthBtn");
+  const fourBtn = document.getElementById("periodFourWeekBtn");
+  const titleEl = document.getElementById("summaryPeriodLabel");
+  const breakdownEl = document.getElementById("monthlyBreakdownSummary");
+  const exportBtn = document.getElementById("exportSummaryPeriodBtn");
+
+  if (monthBtn) monthBtn.classList.toggle("is-active", mode === "month");
+  if (fourBtn) fourBtn.classList.toggle("is-active", mode === "four_week");
+  if (titleEl) titleEl.textContent = mode === "four_week" ? "Last 4 Weeks" : "Month";
+  if (breakdownEl) breakdownEl.textContent = mode === "four_week" ? "4-week breakdown" : "Monthly breakdown";
+  if (exportBtn) exportBtn.textContent = mode === "four_week" ? "Export 4-Week Payslip (PDF)" : "Export Month Payslip (PDF)";
 }
 /* ===============================
    DEFAULT COMPANY / DEFAULT SELECTION
@@ -1675,6 +1704,26 @@ function dateOnlyToDate(dateStr) {
   return new Date((dateStr || "") + "T00:00:00");
 }
 
+function getCurrentFourWeekRange() {
+  const weekStart = getCurrentWeekStartMonday();
+  const start = addDays(weekStart, -21);
+  start.setHours(0, 0, 0, 0);
+
+  const endExclusive = addDays(start, 28);
+  endExclusive.setHours(0, 0, 0, 0);
+
+  const endInclusive = addDays(start, 27);
+  endInclusive.setHours(23, 59, 59, 999);
+
+  return {
+    start,
+    endExclusive,
+    endInclusive,
+    startStr: start.toISOString().slice(0, 10),
+    endStr: endInclusive.toISOString().slice(0, 10)
+  };
+}
+
 const TILE_SPECS = {
   worked: { label: "Worked", type: "hours" },
   breaks: { label: "Breaks", type: "hours" },
@@ -1759,8 +1808,17 @@ function renderCurrentPeriodTiles() {
   const weekResult = processShifts(weekShifts, "overall");
   renderBreakdownTiles("thisWeekTiles", "", weekResult, order);
 
-  const ym = new Date().toISOString().slice(0, 7);
-  const monthShifts = shifts.filter(s => (s.date || "").slice(0, 7) === ym);
+  let monthShifts = [];
+  if (isSummaryPage && getSummaryPeriodMode() === "four_week") {
+    const r = getCurrentFourWeekRange();
+    monthShifts = shifts.filter(s => {
+      const d = dateOnlyToDate(s.date);
+      return d >= r.start && d < r.endExclusive;
+    });
+  } else {
+    const ym = new Date().toISOString().slice(0, 7);
+    monthShifts = shifts.filter(s => (s.date || "").slice(0, 7) === ym);
+  }
 
   const monthResult = processMonthAsWeeks(monthShifts, "overall");
   renderBreakdownTiles("thisMonthTiles", "", monthResult, order);
@@ -1806,17 +1864,28 @@ function renderCompanySummary() {
   if (!container) return;
 
   ensureDefaultCompany();
+  const summaryMode = getSummaryPeriodMode();
+  const monthLabel = summaryMode === "four_week" ? "Last 4 Weeks" : "This Month";
 
   const weekStart = getCurrentWeekStartMonday();
   const weekEnd = addDays(weekStart, 7);
-  const ym = new Date().toISOString().slice(0, 7);
 
   const weekShifts = shifts.filter(s => {
     const d = dateOnlyToDate(s.date);
     return d >= weekStart && d < weekEnd;
   });
 
-  const monthShifts = shifts.filter(s => (s.date || "").slice(0, 7) === ym);
+  let monthShifts = [];
+  if (summaryMode === "four_week") {
+    const r = getCurrentFourWeekRange();
+    monthShifts = shifts.filter(s => {
+      const d = dateOnlyToDate(s.date);
+      return d >= r.start && d < r.endExclusive;
+    });
+  } else {
+    const ym = new Date().toISOString().slice(0, 7);
+    monthShifts = shifts.filter(s => (s.date || "").slice(0, 7) === ym);
+  }
 
   const groupByCompany = (arr) => {
     const out = {};
@@ -1841,7 +1910,7 @@ function renderCompanySummary() {
   });
 
   if (!ordered.length) {
-    container.innerHTML = `<div class="shift-card">No company data yet for this week/month.</div>`;
+    container.innerHTML = `<div class="shift-card">No company data yet for this week/${escapeHtml(monthLabel.toLowerCase())}.</div>`;
     return;
   }
 
@@ -1878,11 +1947,11 @@ function renderCompanySummary() {
       <div class="week-group">
         <div class="week-header" onclick="toggleCompanySummary('${cid}')">
           <span>${escapeHtml(name)}</span>
-          <span class="small">Week £${Number(w.total || 0).toFixed(2)} • Month £${Number(m.total || 0).toFixed(2)}</span>
+          <span class="small">Week £${Number(w.total || 0).toFixed(2)} • ${escapeHtml(monthLabel)} £${Number(m.total || 0).toFixed(2)}</span>
         </div>
         <div class="week-content" id="cmp-${cid}" style="display:none;">
           ${line("This Week", w)}
-          ${line("This Month", m)}
+          ${line(monthLabel, m)}
         </div>
       </div>
     `;
@@ -2464,13 +2533,26 @@ function exportPayslip(period = "week") {
   let overall;
 
   if (period === "month") {
-    const r = getMonthRangeForDate(new Date());
-    periodLabel = "Month";
-    periodStart = r.startStr;
-    periodEnd = r.endStr;
+    if (getSummaryPeriodMode() === "four_week") {
+      const r = getCurrentFourWeekRange();
+      periodLabel = "4 Weeks";
+      periodStart = r.startStr;
+      periodEnd = r.endStr;
 
-    periodShifts = shifts.filter(s => (s.date || "").slice(0, 7) === r.ym);
-    overall = processShifts(periodShifts, "monthOverall");
+      periodShifts = shifts.filter(s => {
+        const d = dateOnlyToDate(s.date);
+        return d >= r.start && d < r.endExclusive;
+      });
+      overall = processMonthAsWeeks(periodShifts, "overall");
+    } else {
+      const r = getMonthRangeForDate(new Date());
+      periodLabel = "Month";
+      periodStart = r.startStr;
+      periodEnd = r.endStr;
+
+      periodShifts = shifts.filter(s => (s.date || "").slice(0, 7) === r.ym);
+      overall = processMonthAsWeeks(periodShifts, "overall");
+    }
   } else {
     const r = getWeekRangeForDate(new Date());
     periodLabel = "Week (Mon–Sun)";
@@ -2489,7 +2571,7 @@ function exportPayslip(period = "week") {
   Object.keys(grouped).forEach(cid => {
     if (!cid) return;
     byCompany[cid] = (period === "month")
-      ? processShifts(grouped[cid], "monthOverall")
+      ? processMonthAsWeeks(grouped[cid], "perCompany")
       : processShifts(grouped[cid], "perCompany");
   });
 
