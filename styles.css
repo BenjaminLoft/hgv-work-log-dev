@@ -84,7 +84,6 @@ body{
   background: linear-gradient(180deg, rgba(8,14,24,0.75), rgba(8,14,24,0.35));
   border-bottom: 1px solid rgba(255,255,255,0.06);
   min-height: 48px;
-  position: sticky;
 }
 
 .nav-home{
@@ -133,6 +132,10 @@ body{
   border: 1px solid rgba(255,255,255,0.10);
   background: rgba(8,14,24,0.96);
   box-shadow: var(--shadowB);
+}
+
+.nav-menu[hidden]{
+  display: none !important;
 }
 
 .nav-menu a{
