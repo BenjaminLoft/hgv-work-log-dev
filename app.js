@@ -7,11 +7,12 @@
    STORAGE
 ================================ */
 
-const DATA_MODEL_VERSION = 4;
+const DATA_MODEL_VERSION = 5;
 const DATA_VERSION_KEY = "dataVersion";
 const DEFAULT_SETTINGS = {
   defaultStart: "",
   defaultFinish: "",
+  defaultNightOutPay: 0,
   baseRate: 17.75,
   baseHours: 45,
   otWeekday: 1.25,
@@ -90,6 +91,7 @@ function normalizeSettings(src) {
   out.otSunday = Number(out.otSunday || 1);
   out.otBankHoliday = Number(out.otBankHoliday || 1);
   out.annualLeaveAllowance = Number(out.annualLeaveAllowance || 0);
+  out.defaultNightOutPay = Number(out.defaultNightOutPay || 0);
   return out;
 }
 
@@ -187,6 +189,8 @@ function normalizeCompany(src) {
 function normalizeShift(src) {
   const s = (src && typeof src === "object") ? src : {};
   const expenses = s.expenses || {};
+  const nightOutCountRaw = Number(s.nightOutCount || 0);
+  const nightOutPayRaw = Number(s.nightOutPay || 0);
 
   return {
     ...s,
@@ -211,8 +215,9 @@ function normalizeShift(src) {
       parking: Number(expenses.parking || 0),
       tolls: Number(expenses.tolls || 0)
     },
-    nightOutCount: Number(s.nightOutCount || 0),
-    nightOutPay: Number(s.nightOutPay || 0)
+    nightOut: !!(s.nightOut || nightOutCountRaw > 0 || nightOutPayRaw > 0),
+    nightOutCount: Math.max(0, nightOutCountRaw),
+    nightOutPay: Math.max(0, nightOutPayRaw)
   };
 }
 
@@ -773,6 +778,7 @@ function loadSettings() {
   document.getElementById("otSunday").value = settings.otSunday;
   document.getElementById("otBankHoliday").value = settings.otBankHoliday;
   document.getElementById("annualLeaveAllowance").value = settings.annualLeaveAllowance || 0;
+  document.getElementById("defaultNightOutPay").value = settings.defaultNightOutPay || 0;
 }
 
 function saveSettings() {
@@ -785,6 +791,7 @@ function saveSettings() {
   settings.otSunday = Number(document.getElementById("otSunday")?.value) || 1;
   settings.otBankHoliday = Number(document.getElementById("otBankHoliday")?.value) || 1;
   settings.annualLeaveAllowance = Number(document.getElementById("annualLeaveAllowance")?.value) || 0;
+  settings.defaultNightOutPay = Number(document.getElementById("defaultNightOutPay")?.value) || 0;
 
   saveAll();
   alert("Settings saved");
@@ -1177,6 +1184,24 @@ function initLeaveCheckboxBehavior() {
   });
 }
 
+function initNightOutBehavior() {
+  const nightOutEl = document.getElementById("nightOut");
+  const nightOutPayEl = document.getElementById("nightOutPay");
+  if (!nightOutEl || !nightOutPayEl) return;
+
+  const sync = () => {
+    const checked = !!nightOutEl.checked;
+    nightOutPayEl.disabled = !checked;
+    if (checked && !Number(nightOutPayEl.value || 0)) {
+      nightOutPayEl.value = String(Number(settings.defaultNightOutPay || 0));
+    }
+    if (!checked) nightOutPayEl.value = "";
+  };
+
+  nightOutEl.addEventListener("change", sync);
+  sync();
+}
+
 /* ===============================
    ADD / UPDATE SHIFT
 ================================ */
@@ -1206,9 +1231,13 @@ function addOrUpdateShift() {
   const shiftType = document.getElementById("shiftType")?.value || "day";
   const isAnnualLeave = !!document.getElementById("annualLeave")?.checked;
   const isSickDay = !!document.getElementById("sickDay")?.checked;
+  const isNightOut = !!document.getElementById("nightOut")?.checked;
   const startMileage = showMileage ? Number(document.getElementById("startMileage")?.value || 0) : 0;
   const finishMileage = showMileage ? Number(document.getElementById("finishMileage")?.value || 0) : 0;
   const mileage = showMileage ? Math.max(0, finishMileage - startMileage) : 0;
+  const expenseParking = Number(document.getElementById("expenseParking")?.value || 0);
+  const expenseTolls = Number(document.getElementById("expenseTolls")?.value || 0);
+  const nightOutPay = isNightOut ? Number(document.getElementById("nightOutPay")?.value || 0) : 0;
   const defectsNotes = document.getElementById("defects")?.value || "";
 
   if (isAnnualLeave && isSickDay) {
@@ -1239,6 +1268,13 @@ function addOrUpdateShift() {
     annualLeave: isAnnualLeave,
     sickDay: isSickDay,
     bankHoliday: !!document.getElementById("bankHoliday")?.checked,
+    expenses: {
+      parking: Math.max(0, expenseParking),
+      tolls: Math.max(0, expenseTolls)
+    },
+    nightOut: isNightOut,
+    nightOutCount: isNightOut ? 1 : 0,
+    nightOutPay: Math.max(0, nightOutPay),
 
     createdAt:
       (editingIndex !== null && shifts[editingIndex]?.createdAt)
@@ -1292,6 +1328,7 @@ function clearForm() {
 
   // re-apply defaults (this fixes your “start time blank after reset” issue)
   applyDefaultsToShiftEntry();
+  initNightOutBehavior();
 }
 
 /* ===============================
@@ -1382,13 +1419,16 @@ function sumResults(a, b) {
     otPay: (a.otPay || 0) + (b.otPay || 0),
     nightHours: (a.nightHours || 0) + (b.nightHours || 0),
     nightPay: (a.nightPay || 0) + (b.nightPay || 0),
+    expenseTotal: (a.expenseTotal || 0) + (b.expenseTotal || 0),
+    nightOutCount: (a.nightOutCount || 0) + (b.nightOutCount || 0),
+    nightOutPay: (a.nightOutPay || 0) + (b.nightOutPay || 0),
     total: (a.total || 0) + (b.total || 0),
   };
 }
 
 function processMonthAsWeeks(monthShifts, modeForWeek = "overall") {
   if (!Array.isArray(monthShifts) || monthShifts.length === 0) {
-    return { worked: 0, breaks: 0, paid: 0, otHours: 0, basePay: 0, otPay: 0, nightHours: 0, nightPay: 0, total: 0 };
+    return { worked: 0, breaks: 0, paid: 0, otHours: 0, basePay: 0, otPay: 0, nightHours: 0, nightPay: 0, expenseTotal: 0, nightOutCount: 0, nightOutPay: 0, total: 0 };
   }
 
   const weeks = {};
@@ -1401,7 +1441,7 @@ function processMonthAsWeeks(monthShifts, modeForWeek = "overall") {
   return Object.keys(weeks)
     .sort((a, b) => new Date(a) - new Date(b))
     .reduce((acc, wk) => sumResults(acc, processShifts(weeks[wk], modeForWeek)), {
-      worked: 0, breaks: 0, paid: 0, otHours: 0, basePay: 0, otPay: 0, nightHours: 0, nightPay: 0, total: 0
+      worked: 0, breaks: 0, paid: 0, otHours: 0, basePay: 0, otPay: 0, nightHours: 0, nightPay: 0, expenseTotal: 0, nightOutCount: 0, nightOutPay: 0, total: 0
     });
 }
 
@@ -1419,6 +1459,9 @@ function processShifts(group, mode = "overall") {
 
   let nightHoursTotal = 0;
   let nightPayTotal = 0;
+  let expenseTotal = 0;
+  let nightOutCountTotal = 0;
+  let nightOutPayTotal = 0;
   const nightWeeklyPaid = new Set();
 
   // Normalize + totals + ensure baseHours/otHours exist for daily-mode logic
@@ -1426,6 +1469,9 @@ function processShifts(group, mode = "overall") {
     totalWorked += Number(s.worked || 0);
     totalBreaks += Number(s.breaks || 0);
     totalPaid += Number(s.paid || 0);
+    expenseTotal += Number(s.expenses?.parking || 0) + Number(s.expenses?.tolls || 0);
+    nightOutCountTotal += Number(s.nightOutCount || (s.nightOut ? 1 : 0) || 0);
+    nightOutPayTotal += Number(s.nightOutPay || 0);
 
     if (typeof s.baseHours !== "number" || typeof s.otHours !== "number") {
       const split = splitPaidIntoBaseAndOT_DailyWorked(s);
@@ -1473,7 +1519,10 @@ function processShifts(group, mode = "overall") {
       otPay,
       nightHours: nightHoursTotal,
       nightPay: nightPayTotal,
-      total: basePay + otPay + nightPayTotal
+      expenseTotal,
+      nightOutCount: nightOutCountTotal,
+      nightOutPay: nightOutPayTotal,
+      total: basePay + otPay + nightPayTotal + nightOutPayTotal
     };
   }
 
@@ -1597,7 +1646,10 @@ function processShifts(group, mode = "overall") {
     otPay,
     nightHours: nightHoursTotal,
     nightPay: nightPayTotal,
-    total: basePay + otPay + nightPayTotal
+    expenseTotal,
+    nightOutCount: nightOutCountTotal,
+    nightOutPay: nightOutPayTotal,
+    total: basePay + otPay + nightPayTotal + nightOutPayTotal
   };
 }
 /* ===============================
@@ -1632,6 +1684,8 @@ const TILE_SPECS = {
   basePay: { label: "Base Pay", type: "money" },
   otPay: { label: "OT Pay", type: "money" },
   nightPay: { label: "Bonus Pay", type: "money" },
+  nightOutPay: { label: "Night Out Pay", type: "money" },
+  expenseTotal: { label: "Expenses", type: "money" },
   total: { label: "Total", type: "money" }
 };
 
@@ -1648,6 +1702,8 @@ function renderBreakdownTiles(targetId, titleLabel, result, order) {
   const basePay = Number(result.basePay || 0);
   const otPay = Number(result.otPay || 0);
   const nightPay = Number(result.nightPay || 0);
+  const nightOutPay = Number(result.nightOutPay || 0);
+  const expenseTotal = Number(result.expenseTotal || 0);
   const total = Number(result.total || 0);
 
   const values = {
@@ -1659,6 +1715,8 @@ function renderBreakdownTiles(targetId, titleLabel, result, order) {
     basePay,
     otPay,
     nightPay,
+    nightOutPay,
+    expenseTotal,
     total
   };
 
@@ -1801,9 +1859,12 @@ function renderCompanySummary() {
         Base Hours: ${baseH.toFixed(2)} hrs<br>
         OT Hours: ${otH.toFixed(2)} hrs<br>
         Bonus Pay: £${Number(r.nightPay || 0).toFixed(2)}<br>
+        Night Out Pay: £${Number(r.nightOutPay || 0).toFixed(2)} (${Number(r.nightOutCount || 0).toFixed(0)} nights)<br>
+        Expenses: £${Number(r.expenseTotal || 0).toFixed(2)}<br>
         Base Pay: £${Number(r.basePay || 0).toFixed(2)}<br>
         OT Pay: £${Number(r.otPay || 0).toFixed(2)}<br>
-        Total: £${Number(r.total || 0).toFixed(2)}
+        Total: £${Number(r.total || 0).toFixed(2)}<br>
+        Net After Expenses: £${(Number(r.total || 0) - Number(r.expenseTotal || 0)).toFixed(2)}
       </div>
     `;
   };
@@ -1896,9 +1957,12 @@ function renderWeekly() {
           Paid: ${Number(r.paid || 0).toFixed(2)} hrs<br>
           OT Hours: ${Number(r.otHours || 0).toFixed(2)}<br>
           Bonus Pay: £${Number(r.nightPay || 0).toFixed(2)}<br>
+          Night Out Pay: £${Number(r.nightOutPay || 0).toFixed(2)} (${Number(r.nightOutCount || 0).toFixed(0)} nights)<br>
+          Expenses: £${Number(r.expenseTotal || 0).toFixed(2)}<br>
           Base: £${Number(r.basePay || 0).toFixed(2)}<br>
           OT: £${Number(r.otPay || 0).toFixed(2)}<br>
-          Total: £${Number(r.total || 0).toFixed(2)}
+          Total: £${Number(r.total || 0).toFixed(2)}<br>
+          Net: £${(Number(r.total || 0) - Number(r.expenseTotal || 0)).toFixed(2)}
         </div>
       `;
     }).join("");
@@ -1929,9 +1993,12 @@ function renderMonthly() {
           Paid: ${Number(r.paid || 0).toFixed(2)} hrs<br>
           OT Hours: ${Number(r.otHours || 0).toFixed(2)}<br>
           Bonus Pay: £${Number(r.nightPay || 0).toFixed(2)}<br>
+          Night Out Pay: £${Number(r.nightOutPay || 0).toFixed(2)} (${Number(r.nightOutCount || 0).toFixed(0)} nights)<br>
+          Expenses: £${Number(r.expenseTotal || 0).toFixed(2)}<br>
           Base: £${Number(r.basePay || 0).toFixed(2)}<br>
           OT: £${Number(r.otPay || 0).toFixed(2)}<br>
-          Total: £${Number(r.total || 0).toFixed(2)}
+          Total: £${Number(r.total || 0).toFixed(2)}<br>
+          Net: £${(Number(r.total || 0) - Number(r.expenseTotal || 0)).toFixed(2)}
         </div>
       `;
     }).join("");
@@ -1954,6 +2021,7 @@ function getWeekStartMonday(dateStr) {
 function formatShiftLine(s, index) {
   const companyName = getCompanyById(s.companyId)?.name || "Unknown Company";
   const flags = [s.shiftType === "night" ? "NIGHT" : "", s.annualLeave ? "AL" : "", s.sickDay ? "SICK" : "", s.bankHoliday ? "BH" : ""].filter(Boolean).join(" ");
+  const expenses = Number(s.expenses?.parking || 0) + Number(s.expenses?.tolls || 0);
 
   const defects = (s.defects || "").trim();
   const defectsPreview = defects.length > 80 ? defects.slice(0, 80) + "…" : defects;
@@ -1968,6 +2036,8 @@ function formatShiftLine(s, index) {
         ${s.trailer1 ? `<div>Trailer 1: ${escapeHtml(s.trailer1)}</div>` : ""}
         ${s.trailer2 ? `<div>Trailer 2: ${escapeHtml(s.trailer2)}</div>` : ""}
         ${(Number(s.mileage || 0) > 0) ? `<div>Mileage: ${Number(s.startMileage || 0).toFixed(0)} → ${Number(s.finishMileage || 0).toFixed(0)} (${Number(s.mileage || 0).toFixed(0)} miles)</div>` : ""}
+        ${(Number(s.nightOutPay || 0) > 0 || Number(s.nightOutCount || 0) > 0) ? `<div>Night Out: ${Number(s.nightOutCount || 0).toFixed(0)} • Pay: £${Number(s.nightOutPay || 0).toFixed(2)}</div>` : ""}
+        ${expenses > 0 ? `<div>Expenses: £${expenses.toFixed(2)} (Parking £${Number(s.expenses?.parking || 0).toFixed(2)} • Tolls £${Number(s.expenses?.tolls || 0).toFixed(2)})</div>` : ""}
         <div>Worked: ${Number(s.worked || 0).toFixed(2)} • Breaks: ${Number(s.breaks || 0).toFixed(2)} • Paid: ${Number(s.paid || 0).toFixed(2)}</div>
         ${defects ? `<div>Defects/Notes: ${escapeHtml(defectsPreview)}</div>` : ""}
         ${defects && defects.length > 80 ? `<details style="margin-top:8px;"><summary class="small">View full defects/notes</summary><div style="margin-top:8px;">${escapeHtml(defects).replaceAll("\n","<br>")}</div></details>` : ""}
@@ -2074,6 +2144,9 @@ function loadShiftForEditingIfRequested() {
   setVal("startMileage", s.startMileage || 0);
   setVal("finishMileage", s.finishMileage || 0);
   setVal("mileageDone", s.mileage || 0);
+  setVal("expenseParking", s.expenses?.parking || 0);
+  setVal("expenseTolls", s.expenses?.tolls || 0);
+  setVal("nightOutPay", s.nightOutPay || 0);
   setVal("company", s.companyId);
   applyCompanyShiftEntryVisibility(s.companyId);
   renderVehicleMenuOptions(s.vehicle || "");
@@ -2084,6 +2157,8 @@ function loadShiftForEditingIfRequested() {
   setCheck("annualLeave", s.annualLeave);
   setCheck("sickDay", s.sickDay);
   setCheck("bankHoliday", s.bankHoliday);
+  setCheck("nightOut", s.nightOut || Number(s.nightOutCount || 0) > 0 || Number(s.nightOutPay || 0) > 0);
+  initNightOutBehavior();
 }
 
 /* ===============================
@@ -2250,9 +2325,11 @@ function buildPayslipHTML({ title, periodLabel, periodStart, periodEnd, overall,
           <td class="right">${fmtHours(baseH)}</td>
           <td class="right">${fmtHours(r.otHours)}</td>
           <td class="right">${fmtMoney(r.nightPay || 0)}</td>
+          <td class="right">${fmtMoney(r.nightOutPay || 0)}</td>
+          <td class="right">${fmtMoney(r.expenseTotal || 0)}</td>
           <td class="right">${fmtMoney(r.basePay)}</td>
           <td class="right">${fmtMoney(r.otPay)}</td>
-          <td class="right"><strong>${fmtMoney(r.total)}</strong></td>
+          <td class="right"><strong>${fmtMoney(r.total)}</strong><div class="small">Net ${fmtMoney((Number(r.total || 0) - Number(r.expenseTotal || 0)))}</div></td>
         </tr>
       `;
     }).join("");
@@ -2260,6 +2337,7 @@ function buildPayslipHTML({ title, periodLabel, periodStart, periodEnd, overall,
   const shiftRows = rows.map(s => {
     const companyName = getCompanyById(s.companyId)?.name || "Unknown Company";
     const flags = [s.annualLeave ? "AL" : "", s.sickDay ? "SICK" : "", s.bankHoliday ? "BH" : ""].filter(Boolean).join(" ");
+    const expenses = Number(s.expenses?.parking || 0) + Number(s.expenses?.tolls || 0);
     return `
       <tr>
         <td><strong>${escapeHtml(s.date)}</strong>${flags ? `<div class="small">${escapeHtml(flags)}</div>` : ""}</td>
@@ -2269,6 +2347,8 @@ function buildPayslipHTML({ title, periodLabel, periodStart, periodEnd, overall,
         <td class="right">${fmtHours(s.worked)}</td>
         <td class="right">${fmtHours(s.breaks)}</td>
         <td class="right">${fmtHours(s.paid)}</td>
+        <td class="right">${fmtMoney(s.nightOutPay || 0)}</td>
+        <td class="right">${fmtMoney(expenses)}</td>
         <td class="right">${fmtMoney(s.__payTotal || 0)}</td>
       </tr>
     `;
@@ -2306,6 +2386,8 @@ function buildPayslipHTML({ title, periodLabel, periodStart, periodEnd, overall,
 
             <div class="kpi"><div class="l">Base Hours</div><div class="v">${fmtHours(baseHours)}</div></div>
             <div class="kpi"><div class="l">Bonus Pay</div><div class="v">${fmtMoney(overall.nightPay || 0)}</div></div>
+            <div class="kpi"><div class="l">Night Out Pay</div><div class="v">${fmtMoney(overall.nightOutPay || 0)}</div></div>
+            <div class="kpi"><div class="l">Expenses</div><div class="v">${fmtMoney(overall.expenseTotal || 0)}</div></div>
             <div class="kpi"><div class="l">Base Pay</div><div class="v">${fmtMoney(overall.basePay)}</div></div>
             <div class="kpi"><div class="l">OT Pay</div><div class="v">${fmtMoney(overall.otPay)}</div></div>
           </div>
@@ -2315,7 +2397,10 @@ function buildPayslipHTML({ title, periodLabel, periodStart, periodEnd, overall,
               <div class="row"><span>Base Pay</span><span>${fmtMoney(overall.basePay)}</span></div>
               <div class="row"><span>Overtime Pay</span><span>${fmtMoney(overall.otPay)}</span></div>
               <div class="row"><span>Bonus Pay</span><span>${fmtMoney(overall.nightPay || 0)}</span></div>
+              <div class="row"><span>Night Out Pay</span><span>${fmtMoney(overall.nightOutPay || 0)}</span></div>
+              <div class="row"><span>Expenses</span><span>${fmtMoney(overall.expenseTotal || 0)}</span></div>
               <div class="row"><strong>Total</strong><strong>${fmtMoney(overall.total)}</strong></div>
+              <div class="row"><strong>Net</strong><strong>${fmtMoney(Number(overall.total || 0) - Number(overall.expenseTotal || 0))}</strong></div>
               <div class="small" style="margin-top:8px;">Note: Calculation summary only. Verify against payslips/invoices.</div>
             </div>
           </div>
@@ -2331,13 +2416,15 @@ function buildPayslipHTML({ title, periodLabel, periodStart, periodEnd, overall,
                 <th class="right">Base Hrs</th>
                 <th class="right">OT Hrs</th>
                 <th class="right">Bonus Pay</th>
+                <th class="right">Night Out Pay</th>
+                <th class="right">Expenses</th>
                 <th class="right">Base Pay</th>
                 <th class="right">OT Pay</th>
                 <th class="right">Total</th>
               </tr>
             </thead>
             <tbody>
-              ${companyRows || `<tr><td colspan="10" class="small">No company data for this period.</td></tr>`}
+              ${companyRows || `<tr><td colspan="12" class="small">No company data for this period.</td></tr>`}
             </tbody>
           </table>
 
@@ -2352,11 +2439,13 @@ function buildPayslipHTML({ title, periodLabel, periodStart, periodEnd, overall,
                 <th class="right">Worked</th>
                 <th class="right">Breaks</th>
                 <th class="right">Paid</th>
+                <th class="right">Night Out</th>
+                <th class="right">Expenses</th>
                 <th class="right">Pay</th>
               </tr>
             </thead>
             <tbody>
-              ${shiftRows || `<tr><td colspan="8" class="small">No shifts in this period.</td></tr>`}
+              ${shiftRows || `<tr><td colspan="10" class="small">No shifts in this period.</td></tr>`}
             </tbody>
           </table>
         </div>
@@ -2432,6 +2521,7 @@ function exportPayslip(period = "week") {
       const company = getCompanyById(s.companyId);
       const bonus = calcBonusForShift(s, company, new Set(), "");
       linePay += Number(bonus.bonusPay || 0);
+      linePay += Number(s.nightOutPay || 0);
       // per-week bonus can’t be reliably allocated per line, so it remains excluded from line pay.
 
       return { ...s, __payTotal: linePay };
@@ -2491,6 +2581,7 @@ document.addEventListener("DOMContentLoaded", () => {
   initShiftTypeBehavior();
   initMileageBehavior();
   initLeaveCheckboxBehavior();
+  initNightOutBehavior();
   applyDefaultsToShiftEntry();
 
   // Summary page
