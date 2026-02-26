@@ -1257,7 +1257,7 @@ function addOrUpdateShift() {
   const showVehicle = company ? (company.showVehicleField !== false) : true;
   const showTrailers = company ? (company.showTrailerFields !== false) : true;
   const showMileage = company ? !!company.showMileageFields : false;
-  const leavePaidHours = clamp0(company?.standardShiftLength || 9);
+  const leavePaidHours = Math.max(0, clamp0(company?.standardShiftLength || 9) - 1);
 
   const vehicleRaw = showVehicle ? (document.getElementById("vehicle")?.value || "") : "";
   const vehicle = vehicleRaw.toUpperCase().trim();
