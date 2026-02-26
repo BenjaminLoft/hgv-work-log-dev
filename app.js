@@ -7,12 +7,11 @@
    STORAGE
 ================================ */
 
-const DATA_MODEL_VERSION = 5;
+const DATA_MODEL_VERSION = 6;
 const DATA_VERSION_KEY = "dataVersion";
 const DEFAULT_SETTINGS = {
   defaultStart: "",
   defaultFinish: "",
-  defaultNightOutPay: 0,
   baseRate: 17.75,
   baseHours: 45,
   otWeekday: 1.25,
@@ -91,7 +90,6 @@ function normalizeSettings(src) {
   out.otSunday = Number(out.otSunday || 1);
   out.otBankHoliday = Number(out.otBankHoliday || 1);
   out.annualLeaveAllowance = Number(out.annualLeaveAllowance || 0);
-  out.defaultNightOutPay = Number(out.defaultNightOutPay || 0);
   return out;
 }
 
@@ -169,6 +167,7 @@ function normalizeCompany(src) {
     baseWeeklyHours: Number(c.baseWeeklyHours || 0),
     baseDailyPaidHours: Number(c.baseDailyPaidHours || 0),
     standardShiftLength: Number(c.standardShiftLength || 0),
+    nightOutPay: Number(c.nightOutPay || 0),
     dailyOTAfterWorkedHours: Number(c.dailyOTAfterWorkedHours || 0),
     minPaidShiftHours: Number(c.minPaidShiftHours || 0),
     nightBonus: legacyFromRule,
@@ -345,6 +344,7 @@ function ensureDefaultCompany() {
     showVehicleField: true,
     showTrailerFields: true,
     showMileageFields: false,
+    nightOutPay: 0,
     vehicleIds: [],
     createdAt: Date.now()
   }];
@@ -484,6 +484,7 @@ function renderCompanyDropdowns(selectedId = "") {
 
   applyCompanyShiftEntryVisibility(sel.value);
   renderVehicleMenuOptions(document.getElementById("vehicle")?.value || "");
+  initNightOutBehavior();
 }
 
 /* ===============================
@@ -518,6 +519,7 @@ function renderCompanies() {
           Rate: £${Number(c.baseRate || 0).toFixed(2)}<br>
 		  ${c.baseDailyPaidHours ? `Base daily paid (salaried): ${Number(c.baseDailyPaidHours || 0).toFixed(2)} hrs<br>` : ""}
 		  ${c.standardShiftLength ? `Std shift length: ${Number(c.standardShiftLength || 0).toFixed(2)} hrs<br>` : ""}
+          Night out pay: £${Number(c.nightOutPay || 0).toFixed(2)}<br>
           Weekly base: ${Number(c.baseWeeklyHours || 0).toFixed(2)} hrs<br>
           ${(c.payMode === "daily")
 		  ? `Daily OT after (worked): ${Number(c.dailyOTAfterWorkedHours || 0).toFixed(2)} hrs<br>` : ``}
@@ -600,6 +602,7 @@ function addOrUpdateCompany() {
 	baseWeeklyHours: Number(document.getElementById("baseWeeklyHours")?.value) || 0,
 	baseDailyPaidHours: Number(document.getElementById("baseDailyPaidHours")?.value) || 0,
 	standardShiftLength: Number(document.getElementById("standardShiftLength")?.value) || 0,
+	nightOutPay: Number(document.getElementById("companyNightOutPay")?.value) || 0,
 	dailyOTAfterWorkedHours: Number(document.getElementById("dailyOTAfterWorkedHours")?.value) || 0,
 	minPaidShiftHours: Number(document.getElementById("minPaidShiftHours")?.value) || 0,
 
@@ -696,6 +699,7 @@ function editCompany(id) {
   setVal("baseWeeklyHours", c.baseWeeklyHours);
   setVal("baseDailyPaidHours", c.baseDailyPaidHours);
   setVal("standardShiftLength", c.standardShiftLength);
+  setVal("companyNightOutPay", c.nightOutPay || 0);
 
   // Contact
   setVal("contactName", c.contactName);
@@ -755,6 +759,7 @@ function resetCompanyForm() {
     "companyId", "companyName", "companyBaseRate",
     "payMode", "baseWeeklyHours", "dailyOTAfterWorkedHours", "minPaidShiftHours",
     "otWeekday", "otSaturday", "otSunday", "otBankHoliday",
+    "companyNightOutPay",
     "bonusType", "bonusMode", "bonusAmount", "bonusStart", "bonusEnd",
     "contactName", "contactNumber"
   ];
@@ -771,6 +776,7 @@ function resetCompanyForm() {
   if (document.getElementById("minPaidShiftHours")) document.getElementById("minPaidShiftHours").value = 0;
   if (document.getElementById("baseDailyPaidHours")) document.getElementById("baseDailyPaidHours").value = 0;
   if (document.getElementById("standardShiftLength")) document.getElementById("standardShiftLength").value = 0;
+  if (document.getElementById("companyNightOutPay")) document.getElementById("companyNightOutPay").value = 0;
 
   if (document.getElementById("otWeekday")) document.getElementById("otWeekday").value = settings.otWeekday ?? 1.25;
   if (document.getElementById("otSaturday")) document.getElementById("otSaturday").value = settings.otSaturday ?? 1.25;
@@ -807,7 +813,6 @@ function loadSettings() {
   document.getElementById("otSunday").value = settings.otSunday;
   document.getElementById("otBankHoliday").value = settings.otBankHoliday;
   document.getElementById("annualLeaveAllowance").value = settings.annualLeaveAllowance || 0;
-  document.getElementById("defaultNightOutPay").value = settings.defaultNightOutPay || 0;
 }
 
 function saveSettings() {
@@ -820,7 +825,6 @@ function saveSettings() {
   settings.otSunday = Number(document.getElementById("otSunday")?.value) || 1;
   settings.otBankHoliday = Number(document.getElementById("otBankHoliday")?.value) || 1;
   settings.annualLeaveAllowance = Number(document.getElementById("annualLeaveAllowance")?.value) || 0;
-  settings.defaultNightOutPay = Number(document.getElementById("defaultNightOutPay")?.value) || 0;
 
   saveAll();
   alert("Settings saved");
@@ -962,6 +966,7 @@ function initVehicleCombobox() {
     companyEl.addEventListener("change", () => {
       applyCompanyShiftEntryVisibility(companyEl.value);
       renderVehicleMenuOptions(input.value);
+      initNightOutBehavior();
     });
   }
 }
@@ -1218,20 +1223,13 @@ function initLeaveCheckboxBehavior() {
 
 function initNightOutBehavior() {
   const nightOutEl = document.getElementById("nightOut");
-  const nightOutPayEl = document.getElementById("nightOutPay");
-  if (!nightOutEl || !nightOutPayEl) return;
+  const infoEl = document.getElementById("nightOutPayInfo");
+  const companyId = document.getElementById("company")?.value || "";
+  if (!nightOutEl || !infoEl) return;
 
-  const sync = () => {
-    const checked = !!nightOutEl.checked;
-    nightOutPayEl.disabled = !checked;
-    if (checked && !Number(nightOutPayEl.value || 0)) {
-      nightOutPayEl.value = String(Number(settings.defaultNightOutPay || 0));
-    }
-    if (!checked) nightOutPayEl.value = "";
-  };
-
-  nightOutEl.addEventListener("change", sync);
-  sync();
+  const c = getCompanyById(companyId);
+  const rate = Number(c?.nightOutPay || 0);
+  infoEl.textContent = `Night Out Pay Rate (from company): £${rate.toFixed(2)} per night out.`;
 }
 
 /* ===============================
@@ -1270,7 +1268,8 @@ function addOrUpdateShift() {
   const mileage = showMileage ? Math.max(0, finishMileage - startMileage) : 0;
   const expenseParking = Number(document.getElementById("expenseParking")?.value || 0);
   const expenseTolls = Number(document.getElementById("expenseTolls")?.value || 0);
-  const nightOutPay = isNightOut ? Number(document.getElementById("nightOutPay")?.value || 0) : 0;
+  const nightOutPayRate = Number(company?.nightOutPay || 0);
+  const nightOutPay = isNightOut ? nightOutPayRate : 0;
   const defectsNotes = document.getElementById("defects")?.value || "";
 
   if (isAnnualLeave && isSickDay) {
@@ -2246,7 +2245,6 @@ function loadShiftForEditingIfRequested() {
   setVal("mileageDone", s.mileage || 0);
   setVal("expenseParking", s.expenses?.parking || 0);
   setVal("expenseTolls", s.expenses?.tolls || 0);
-  setVal("nightOutPay", s.nightOutPay || 0);
   setVal("company", s.companyId);
   applyCompanyShiftEntryVisibility(s.companyId);
   renderVehicleMenuOptions(s.vehicle || "");
