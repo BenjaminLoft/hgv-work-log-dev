@@ -2002,18 +2002,18 @@ function updateCompanyFormVisibility() {
   const bonusModeEl = document.getElementById("bonusMode");
   const bonusAmountLabel = document.getElementById("bonusAmountLabel");
 
-  if (dailyOTRow) {
-    dailyOTRow.hidden = (payModeEl?.value !== "daily");
-  }
+  const setVisible = (el, isVisible) => {
+    if (!el) return;
+    el.hidden = !isVisible;
+    el.style.display = isVisible ? "" : "none";
+  };
+
+  setVisible(dailyOTRow, payModeEl?.value === "daily");
 
   const bonusType = bonusTypeEl?.value || "none";
   const bonusMode = bonusModeEl?.value || "per_hour";
-  if (bonusModeWrap) {
-    bonusModeWrap.hidden = (bonusType !== "night_window");
-  }
-  if (bonusWindow) {
-    bonusWindow.hidden = !(bonusType === "night_window" && bonusMode === "per_hour");
-  }
+  setVisible(bonusModeWrap, bonusType === "night_window");
+  setVisible(bonusWindow, bonusType === "night_window" && bonusMode === "per_hour");
   if (bonusAmountLabel) {
     if (bonusType === "night_window" && bonusMode === "per_hour") {
       bonusAmountLabel.textContent = "Bonus Amount Per Hour (£)";
