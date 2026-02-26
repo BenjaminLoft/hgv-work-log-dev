@@ -661,6 +661,7 @@ function loadSettings() {
   if (!document.getElementById("baseRate")) return;
 
   document.getElementById("defaultStart").value = settings.defaultStart;
+  document.getElementById("defaultFinish").value = settings.defaultFinish || "";
   document.getElementById("baseRate").value = settings.baseRate;
   document.getElementById("baseHours").value = settings.baseHours;
   document.getElementById("otWeekday").value = settings.otWeekday;
@@ -671,6 +672,7 @@ function loadSettings() {
 
 function saveSettings() {
   settings.defaultStart = document.getElementById("defaultStart")?.value || "";
+  settings.defaultFinish = document.getElementById("defaultFinish")?.value || "";
   settings.baseRate = Number(document.getElementById("baseRate")?.value) || 0;
   settings.baseHours = Number(document.getElementById("baseHours")?.value) || 0;
   settings.otWeekday = Number(document.getElementById("otWeekday")?.value) || 1;
@@ -958,9 +960,15 @@ function applyDefaultsToShiftEntry({ force = false } = {}) {
     startEl.value = settings.defaultStart;
   }
 
+  const finishEl = document.getElementById("finish");
+  if (finishEl && (force || !finishEl.value) && settings?.defaultFinish) {
+    finishEl.value = settings.defaultFinish;
+  }
+
   const dateEl = document.getElementById("date");
   if (dateEl && (force || !dateEl.value)) {
-    dateEl.value = new Date().toISOString().slice(0, 10);
+    const shiftType = document.getElementById("shiftType")?.value || "day";
+    dateEl.value = getDefaultDateForShiftType(shiftType);
   }
 
   const companyEl = document.getElementById("company");
@@ -972,11 +980,13 @@ function applyDefaultsToShiftEntry({ force = false } = {}) {
 function applyCompanyShiftEntryVisibility(companyId) {
   const vehicleRow = document.getElementById("shiftVehicleRow");
   const trailerRows = document.getElementById("shiftTrailerRows");
-  if (!vehicleRow && !trailerRows) return;
+  const mileageRows = document.getElementById("shiftMileageRows");
+  if (!vehicleRow && !trailerRows && !mileageRows) return;
 
   const c = getCompanyById(companyId);
   const showVehicle = c ? (c.showVehicleField !== false) : true;
   const showTrailers = c ? (c.showTrailerFields !== false) : true;
+  const showMileage = c ? !!c.showMileageFields : false;
 
   if (vehicleRow) {
     vehicleRow.hidden = !showVehicle;
@@ -995,6 +1005,57 @@ function applyCompanyShiftEntryVisibility(companyId) {
       if (t2) t2.value = "";
     }
   }
+
+  if (mileageRows) {
+    mileageRows.hidden = !showMileage;
+    if (!showMileage) {
+      const startMileage = document.getElementById("startMileage");
+      const finishMileage = document.getElementById("finishMileage");
+      const mileageDone = document.getElementById("mileageDone");
+      if (startMileage) startMileage.value = "";
+      if (finishMileage) finishMileage.value = "";
+      if (mileageDone) mileageDone.value = "";
+    } else {
+      updateMileageDone();
+    }
+  }
+}
+
+function getDefaultDateForShiftType(type) {
+  const d = new Date();
+  if (type === "night") d.setDate(d.getDate() - 1);
+  return d.toISOString().slice(0, 10);
+}
+
+function updateMileageDone() {
+  const startEl = document.getElementById("startMileage");
+  const finishEl = document.getElementById("finishMileage");
+  const doneEl = document.getElementById("mileageDone");
+  if (!startEl || !finishEl || !doneEl) return;
+
+  const start = Number(startEl.value || 0);
+  const finish = Number(finishEl.value || 0);
+  const miles = Math.max(0, finish - start);
+  doneEl.value = (startEl.value || finishEl.value) ? String(miles) : "";
+}
+
+function initShiftTypeBehavior() {
+  const shiftTypeEl = document.getElementById("shiftType");
+  const dateEl = document.getElementById("date");
+  if (!shiftTypeEl || !dateEl) return;
+
+  shiftTypeEl.addEventListener("change", () => {
+    if (editingIndex !== null) return;
+    dateEl.value = getDefaultDateForShiftType(shiftTypeEl.value);
+  });
+}
+
+function initMileageBehavior() {
+  const startEl = document.getElementById("startMileage");
+  const finishEl = document.getElementById("finishMileage");
+  if (!startEl || !finishEl) return;
+  startEl.addEventListener("input", updateMileageDone);
+  finishEl.addEventListener("input", updateMileageDone);
 }
 
 /* ===============================
@@ -1019,9 +1080,15 @@ function addOrUpdateShift() {
   const company = getCompanyById(companyId);
   const showVehicle = company ? (company.showVehicleField !== false) : true;
   const showTrailers = company ? (company.showTrailerFields !== false) : true;
+  const showMileage = company ? !!company.showMileageFields : false;
 
   const vehicleRaw = showVehicle ? (document.getElementById("vehicle")?.value || "") : "";
   const vehicle = vehicleRaw.toUpperCase().trim();
+  const shiftType = document.getElementById("shiftType")?.value || "day";
+  const startMileage = showMileage ? Number(document.getElementById("startMileage")?.value || 0) : 0;
+  const finishMileage = showMileage ? Number(document.getElementById("finishMileage")?.value || 0) : 0;
+  const mileage = showMileage ? Math.max(0, finishMileage - startMileage) : 0;
+  const defectsNotes = document.getElementById("defects")?.value || "";
 
   if (vehicle && !vehicles.includes(vehicle)) {
     vehicles.push(vehicle);
@@ -1035,10 +1102,15 @@ function addOrUpdateShift() {
 
     start: document.getElementById("start")?.value || "",
     finish: document.getElementById("finish")?.value || "",
+    shiftType,
     vehicle,
     trailer1: showTrailers ? (document.getElementById("trailer1")?.value || "") : "",
     trailer2: showTrailers ? (document.getElementById("trailer2")?.value || "") : "",
-    defects: document.getElementById("defects")?.value || "",
+    startMileage,
+    finishMileage,
+    mileage,
+    defects: defectsNotes,
+    notes: defectsNotes,
     annualLeave: !!document.getElementById("annualLeave")?.checked,
     bankHoliday: !!document.getElementById("bankHoliday")?.checked,
 
@@ -1079,9 +1151,13 @@ function clearForm() {
     if (el.type === "checkbox") el.checked = false;
     else if (el.type !== "file") el.value = "";
   });
+  const shiftType = document.getElementById("shiftType");
+  if (shiftType) shiftType.value = "day";
 
   const vehicle = document.getElementById("vehicle");
   if (vehicle) vehicle.value = "";
+  const mileageDone = document.getElementById("mileageDone");
+  if (mileageDone) mileageDone.value = "";
 
   // keep company selection if still selected; otherwise re-pick default
   const company = document.getElementById("company");
@@ -1718,7 +1794,7 @@ function getWeekStartMonday(dateStr) {
 
 function formatShiftLine(s, index) {
   const companyName = getCompanyById(s.companyId)?.name || "Unknown Company";
-  const flags = [s.annualLeave ? "AL" : "", s.bankHoliday ? "BH" : ""].filter(Boolean).join(" ");
+  const flags = [s.shiftType === "night" ? "NIGHT" : "", s.annualLeave ? "AL" : "", s.bankHoliday ? "BH" : ""].filter(Boolean).join(" ");
 
   const defects = (s.defects || "").trim();
   const defectsPreview = defects.length > 80 ? defects.slice(0, 80) + "…" : defects;
@@ -1732,9 +1808,10 @@ function formatShiftLine(s, index) {
         ${s.vehicle ? `<div>Vehicle: ${escapeHtml(s.vehicle)}</div>` : ""}
         ${s.trailer1 ? `<div>Trailer 1: ${escapeHtml(s.trailer1)}</div>` : ""}
         ${s.trailer2 ? `<div>Trailer 2: ${escapeHtml(s.trailer2)}</div>` : ""}
+        ${(Number(s.mileage || 0) > 0) ? `<div>Mileage: ${Number(s.startMileage || 0).toFixed(0)} → ${Number(s.finishMileage || 0).toFixed(0)} (${Number(s.mileage || 0).toFixed(0)} miles)</div>` : ""}
         <div>Worked: ${Number(s.worked || 0).toFixed(2)} • Breaks: ${Number(s.breaks || 0).toFixed(2)} • Paid: ${Number(s.paid || 0).toFixed(2)}</div>
-        ${defects ? `<div>Defects: ${escapeHtml(defectsPreview)}</div>` : ""}
-        ${defects && defects.length > 80 ? `<details style="margin-top:8px;"><summary class="small">View full defects</summary><div style="margin-top:8px;">${escapeHtml(defects).replaceAll("\n","<br>")}</div></details>` : ""}
+        ${defects ? `<div>Defects/Notes: ${escapeHtml(defectsPreview)}</div>` : ""}
+        ${defects && defects.length > 80 ? `<details style="margin-top:8px;"><summary class="small">View full defects/notes</summary><div style="margin-top:8px;">${escapeHtml(defects).replaceAll("\n","<br>")}</div></details>` : ""}
       </div>
 
       <div style="margin-top:10px; display:flex; gap:10px; flex-wrap:wrap;">
@@ -1831,15 +1908,19 @@ function loadShiftForEditingIfRequested() {
   setVal("date", s.date);
   setVal("start", s.start);
   setVal("finish", s.finish);
+  setVal("shiftType", s.shiftType || "day");
   setVal("vehicle", s.vehicle);
   setVal("trailer1", s.trailer1);
   setVal("trailer2", s.trailer2);
+  setVal("startMileage", s.startMileage || 0);
+  setVal("finishMileage", s.finishMileage || 0);
+  setVal("mileageDone", s.mileage || 0);
   setVal("company", s.companyId);
   applyCompanyShiftEntryVisibility(s.companyId);
   renderVehicleMenuOptions(s.vehicle || "");
 
   const defectsEl = document.getElementById("defects");
-  if (defectsEl) defectsEl.value = s.defects ?? "";
+  if (defectsEl) defectsEl.value = (s.defects ?? s.notes ?? "");
 
   setCheck("annualLeave", s.annualLeave);
   setCheck("bankHoliday", s.bankHoliday);
@@ -2248,6 +2329,8 @@ document.addEventListener("DOMContentLoaded", () => {
 
   // Shift entry page defaults + editing
   loadShiftForEditingIfRequested();
+  initShiftTypeBehavior();
+  initMileageBehavior();
   applyDefaultsToShiftEntry();
 
   // Summary page

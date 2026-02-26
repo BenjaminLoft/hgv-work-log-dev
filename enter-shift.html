@@ -34,6 +34,12 @@
       Company settings (rate, overtime, mins) will be used unless you override them below.
     </div>
 
+    <label>Shift Type</label>
+    <select id="shiftType">
+      <option value="day">Day shift</option>
+      <option value="night">Night shift</option>
+    </select>
+
     <label>Date</label>
     <input type="date" id="date">
 
@@ -59,7 +65,18 @@
       <input type="text" id="trailer2">
     </div>
 
-    <label>Defects</label>
+    <div id="shiftMileageRows">
+      <label>Start Mileage</label>
+      <input type="number" id="startMileage" min="0" step="1" placeholder="e.g. 124000">
+
+      <label>Finish Mileage</label>
+      <input type="number" id="finishMileage" min="0" step="1" placeholder="e.g. 124320">
+
+      <label>Mileage Done</label>
+      <input type="number" id="mileageDone" min="0" step="1" readonly>
+    </div>
+
+    <label>Defects/Notes</label>
     <textarea id="defects"></textarea>
 
     <div class="checkbox-row">
