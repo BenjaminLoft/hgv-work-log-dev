@@ -451,6 +451,16 @@ button:active{ transform: scale(0.99); }
   font-size: 11px;
   color: var(--muted);
 }
+.shift-day-details{
+  font-size: 15px;
+}
+.shift-day-details .shift-card strong{
+  font-size: 16px;
+}
+.shift-day-details .shift-card .meta{
+  font-size: 14px;
+  line-height: 1.5;
+}
 .shift-day.is-outside{
   opacity: 0.5;
 }

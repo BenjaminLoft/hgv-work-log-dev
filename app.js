@@ -2363,8 +2363,10 @@ function renderSelectedShiftDateDetails(byDate) {
   }
 
   detailsEl.innerHTML = `
-    <h2 style="margin-top:16px;">${escapeHtml(dateLabel)}</h2>
-    ${entries.map(entry => formatShiftLine(entry.shift, entry.index)).join("")}
+    <div class="shift-day-details">
+      <h2 style="margin-top:16px;">${escapeHtml(dateLabel)}</h2>
+      ${entries.map(entry => formatShiftLine(entry.shift, entry.index)).join("")}
+    </div>
   `;
 }
 
