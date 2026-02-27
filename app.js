@@ -2406,6 +2406,10 @@ function formatShiftLine(s, index) {
   const companyName = getCompanyById(s.companyId)?.name || "Unknown Company";
   const flags = [s.shiftType === "night" ? "NIGHT" : "", s.annualLeave ? "AL" : "", s.sickDay ? "SICK" : "", s.bankHoliday ? "BH" : ""].filter(Boolean).join(" ");
   const expenses = Number(s.expenses?.parking || 0) + Number(s.expenses?.tolls || 0);
+  let otHours = Number(s.otHours);
+  if (!Number.isFinite(otHours)) {
+    otHours = splitPaidIntoBaseAndOT_DailyWorked(s).otHours;
+  }
 
   const defects = (s.defects || "").trim();
   const defectsPreview = defects.length > 80 ? defects.slice(0, 80) + "…" : defects;
@@ -2422,7 +2426,7 @@ function formatShiftLine(s, index) {
         ${(Number(s.mileage || 0) > 0) ? `<div>Mileage: ${Number(s.startMileage || 0).toFixed(0)} → ${Number(s.finishMileage || 0).toFixed(0)} (${Number(s.mileage || 0).toFixed(0)} miles)</div>` : ""}
         ${(Number(s.nightOutPay || 0) > 0 || Number(s.nightOutCount || 0) > 0) ? `<div>Night Out: ${Number(s.nightOutCount || 0).toFixed(0)} • Pay: £${Number(s.nightOutPay || 0).toFixed(2)}</div>` : ""}
         ${expenses > 0 ? `<div>Expenses: £${expenses.toFixed(2)} (Parking £${Number(s.expenses?.parking || 0).toFixed(2)} • Tolls £${Number(s.expenses?.tolls || 0).toFixed(2)})</div>` : ""}
-        <div>Worked: ${Number(s.worked || 0).toFixed(2)} • Breaks: ${Number(s.breaks || 0).toFixed(2)} • Paid: ${Number(s.paid || 0).toFixed(2)}</div>
+        <div>Worked: ${Number(s.worked || 0).toFixed(2)} • Breaks: ${Number(s.breaks || 0).toFixed(2)} • Paid: ${Number(s.paid || 0).toFixed(2)} • OT: ${Number(otHours || 0).toFixed(2)}</div>
         ${defects ? `<div>Defects/Notes: ${escapeHtml(defectsPreview)}</div>` : ""}
         ${defects && defects.length > 80 ? `<details style="margin-top:8px;"><summary class="small">View full defects/notes</summary><div style="margin-top:8px;">${escapeHtml(defects).replaceAll("\n","<br>")}</div></details>` : ""}
       </div>
