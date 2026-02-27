@@ -1503,7 +1503,7 @@ function processShifts(group, mode = "overall") {
   let nightOutPayTotal = 0;
   const nightWeeklyPaid = new Set();
 
-  // Normalize + totals + ensure baseHours/otHours exist for daily-mode logic
+  // Normalize + totals + recompute base/ot split to avoid stale stored values
   arr.forEach(s => {
     totalWorked += Number(s.worked || 0);
     totalBreaks += Number(s.breaks || 0);
@@ -1512,11 +1512,9 @@ function processShifts(group, mode = "overall") {
     nightOutCountTotal += Number(s.nightOutCount || (s.nightOut ? 1 : 0) || 0);
     nightOutPayTotal += Number(s.nightOutPay || 0);
 
-    if (typeof s.baseHours !== "number" || typeof s.otHours !== "number") {
-      const split = splitPaidIntoBaseAndOT_DailyWorked(s);
-      s.baseHours = split.baseHours;
-      s.otHours = split.otHours;
-    }
+    const split = splitPaidIntoBaseAndOT_DailyWorked(s);
+    s.baseHours = split.baseHours;
+    s.otHours = split.otHours;
   });
 
   // Month mode = sum per-shift pricing (no weekly allocation across month)
