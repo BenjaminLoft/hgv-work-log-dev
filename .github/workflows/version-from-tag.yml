@@ -24,7 +24,7 @@ jobs:
           BASE_VERSION: "1.0.0"
         run: |
           python3 - <<'PY'
-          import json, os, subprocess
+          import json, os, re, subprocess
 
           base = os.environ.get("BASE_VERSION", "0.0.0").strip()
           count = subprocess.check_output(["git", "rev-list", "--count", "HEAD"], text=True).strip()
@@ -39,6 +39,15 @@ jobs:
             json.dump(data, f, indent=2)
             f.write("\n")
 
+          # Update service worker cache version
+          with open("service-worker.js", "r", encoding="utf-8") as f:
+            sw = f.read()
+
+          sw = re.sub(r'APP_VERSION\\s*=\\s*\"[^\"]*\"', f'APP_VERSION = \"{version}\"', sw)
+
+          with open("service-worker.js", "w", encoding="utf-8") as f:
+            f.write(sw)
+
           with open(os.environ["GITHUB_ENV"], "a", encoding="utf-8") as f:
             f.write(f"APP_VERSION={version}\n")
           PY
@@ -51,6 +60,6 @@ jobs:
           fi
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add manifest.json
+          git add manifest.json service-worker.js
           git commit -m "Update app version to ${APP_VERSION}"
           git push

@@ -1,4 +1,5 @@
-const CACHE_NAME = "hgv-log-cache-v2";
+const APP_VERSION = "1.0.0+75";
+const CACHE_NAME = `hgv-log-cache-${APP_VERSION}`;
 const urlsToCache = [
   "./index.html",
   "./enter-shift.html",
