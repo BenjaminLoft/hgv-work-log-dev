@@ -1579,7 +1579,7 @@ function processShifts(group, mode = "overall") {
     const profile = getShiftRateProfile(s);
     const mult = getShiftOTMultiplier(s, profile);
     const company = getCompanyById(s.companyId);
-    const payMode = company?.payMode || "weekly";
+    const payMode = s?.overrides?.payMode ?? company?.payMode ?? "weekly";
 
     const bonusWeekKey = String(s.companyId || "");
     const bonus = calcBonusForShift(s, company, nightWeeklyPaid, bonusWeekKey);
