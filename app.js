@@ -2404,10 +2404,7 @@ function formatShiftLine(s, index) {
   const companyName = getCompanyById(s.companyId)?.name || "Unknown Company";
   const flags = [s.shiftType === "night" ? "NIGHT" : "", s.annualLeave ? "AL" : "", s.sickDay ? "SICK" : "", s.bankHoliday ? "BH" : ""].filter(Boolean).join(" ");
   const expenses = Number(s.expenses?.parking || 0) + Number(s.expenses?.tolls || 0);
-  let otHours = Number(s.otHours);
-  if (!Number.isFinite(otHours)) {
-    otHours = splitPaidIntoBaseAndOT_DailyWorked(s).otHours;
-  }
+  const otHours = splitPaidIntoBaseAndOT_DailyWorked(s).otHours;
 
   const defects = (s.defects || "").trim();
   const defectsPreview = defects.length > 80 ? defects.slice(0, 80) + "…" : defects;
