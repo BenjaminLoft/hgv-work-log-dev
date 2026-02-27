@@ -1,4 +1,4 @@
-const APP_VERSION = "1.0.0+75";
+const APP_VERSION = "1.0.0+77";
 const CACHE_NAME = `hgv-log-cache-${APP_VERSION}`;
 const urlsToCache = [
   "./index.html",
@@ -45,6 +45,19 @@ self.addEventListener("fetch", event => {
           return response;
         })
         .catch(() => caches.match(event.request).then(r => r || caches.match("./index.html")))
+    );
+    return;
+  }
+
+  if (event.request.url.endsWith("manifest.json")) {
+    event.respondWith(
+      fetch(event.request)
+        .then(response => {
+          const copy = response.clone();
+          caches.open(CACHE_NAME).then(cache => cache.put(event.request, copy));
+          return response;
+        })
+        .catch(() => caches.match(event.request))
     );
     return;
   }
