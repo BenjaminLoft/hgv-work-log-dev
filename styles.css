@@ -308,6 +308,15 @@ button:active{ transform: scale(0.99); }
 }
 .shift-card strong{ font-size: 14px; }
 .shift-card .meta{ color: var(--muted); font-size: 13px; margin-top: 6px; }
+.footer-version{
+  margin-top: 18px;
+  text-align: center;
+  color: var(--muted);
+  font-size: 12px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  padding: 12px 0 24px;
+}
 
 /* Weekly groups */
 .week-group{

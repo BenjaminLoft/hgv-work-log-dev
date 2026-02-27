@@ -73,6 +73,8 @@
       </div>
     </div>
 
+    <div id="appVersion" class="footer-version"></div>
+
   </div>
 </div>
 
@@ -116,6 +118,26 @@
     if (typeof renderCurrentPeriodTiles === "function") {
       renderCurrentPeriodTiles();
     }
+  })();
+
+  // Version label
+  (function () {
+    const vEl = document.getElementById("appVersion");
+    if (!vEl) return;
+
+    const dataVersion = (typeof DATA_MODEL_VERSION !== "undefined")
+      ? `Data v${DATA_MODEL_VERSION}`
+      : "Data v?";
+
+    fetch("manifest.json")
+      .then(r => r.ok ? r.json() : null)
+      .then(m => {
+        const appVersion = m?.version ? `App v${m.version}` : "App v?";
+        vEl.textContent = `${appVersion} • ${dataVersion}`;
+      })
+      .catch(() => {
+        vEl.textContent = `App v? • ${dataVersion}`;
+      });
   })();
 </script>
 
