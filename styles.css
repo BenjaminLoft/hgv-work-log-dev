@@ -66,7 +66,6 @@ body{
   font-family: "InterCustom", system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
   color: var(--text);
   background: transparent;
-  padding: 18px;
   min-height: 100%;
 }
 
@@ -80,13 +79,12 @@ body{
   align-items:center;
   gap: 12px;
   padding: 10px 18px;
-  margin: -18px -18px 14px;
-  margin-bottom: 14px;
+  margin: 0 0 14px;
   backdrop-filter: blur(10px);
   background: linear-gradient(180deg, rgba(8,14,24,0.92), rgba(8,14,24,0.82));
   border-bottom: 1px solid rgba(255,255,255,0.10);
   min-height: 64px;
-  width: auto;
+  width: 100%;
 }
 
 .nav-home{
@@ -125,13 +123,13 @@ body{
 
 .nav-title{
   text-align: center;
-  font-size: 16px;
-  font-weight: 800;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
+  font-size: 24px;
+  font-weight: 900;
+  letter-spacing: 0.02em;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  line-height: 1.1;
 }
 
 .nav-menu{
@@ -185,8 +183,8 @@ body{
   }
 
   .nav-title{
-    font-size: 14px;
-    letter-spacing: 0.03em;
+    font-size: 19px;
+    letter-spacing: 0.01em;
   }
 }
 
@@ -195,6 +193,7 @@ body{
   max-width: 440px;
   margin: 0 auto;
   overflow-x: hidden;
+  padding: 0 18px 18px;
 }
 
 .screen{
