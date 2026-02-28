@@ -1,6 +1,6 @@
 {
-  "name": "HGV Work Log",
-  "short_name": "HGVLog",
+  "name": "Drivers Logbook",
+  "short_name": "Logbook",
   "description": "Track driving shifts, vehicles, defects, and overtime pay.",
   "version": "1.0.0+77",
   "start_url": "./index.html",

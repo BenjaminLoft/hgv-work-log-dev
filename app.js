@@ -1,6 +1,5 @@
 /* ===============================
-   HGV Work Log - app.js (FULL REWRITE)
-   Replace your entire app.js with this.
+   Drivers Logbook - app.js
 ================================ */
 
 /* ===============================
@@ -1978,7 +1977,6 @@ function renderLeaveStats() {
       <div class="tile"><div class="label">Year</div><div class="value">${stats.year}</div></div>
       <div class="tile"><div class="label">Annual Leave Allowance</div><div class="value">${Number(stats.allowance).toFixed(0)} days</div></div>
       <div class="tile"><div class="label">Lieu Days Earned</div><div class="value">${Number(stats.lieuDaysEarned || 0).toFixed(0)} days</div></div>
-      <div class="tile"><div class="label">Leave Available</div><div class="value">${Number(stats.available || 0).toFixed(0)} days</div></div>
       <div class="tile"><div class="label">Annual Leave Taken</div><div class="value">${Number(stats.annualLeaveTaken).toFixed(0)} days</div></div>
       <div class="tile"><div class="label">Annual Leave Balance</div><div class="value">${escapeHtml(remText)}</div></div>
       <div class="tile"><div class="label">Sick Days Taken</div><div class="value">${Number(stats.sickDaysTaken).toFixed(0)} days</div></div>
@@ -2989,7 +2987,7 @@ function buildPayslipHTML({ title, periodLabel, periodStart, periodEnd, overall,
                 <div><strong>Generated:</strong> ${escapeHtml(new Date().toLocaleString())}</div>
               </div>
             </div>
-            <div class="chip">HGV Work Log</div>
+            <div class="chip">Drivers Logbook</div>
           </div>
 
           <div class="rule"></div>

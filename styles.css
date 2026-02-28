@@ -75,15 +75,18 @@ body{
   position: sticky;
   top: 0;
   z-index: 10;
-  display:flex;
+  display:grid;
+  grid-template-columns: 44px minmax(0, 1fr) 44px;
   align-items:center;
-  justify-content:space-between;
-  padding: 10px 0;
+  gap: 12px;
+  padding: 10px 18px;
+  margin: -18px -18px 14px;
   margin-bottom: 14px;
   backdrop-filter: blur(10px);
-  background: linear-gradient(180deg, rgba(8,14,24,0.75), rgba(8,14,24,0.35));
-  border-bottom: 1px solid rgba(255,255,255,0.06);
-  min-height: 48px;
+  background: linear-gradient(180deg, rgba(8,14,24,0.92), rgba(8,14,24,0.82));
+  border-bottom: 1px solid rgba(255,255,255,0.10);
+  min-height: 64px;
+  width: auto;
 }
 
 .nav-home{
@@ -94,7 +97,7 @@ body{
   line-height: 1;
   width: 40px;
   height: 40px;
-  border-radius: 999px;
+  border-radius: 10px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -108,7 +111,7 @@ body{
   height: 40px;
   margin: 0;
   padding: 0;
-  border-radius: 999px;
+  border-radius: 10px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -120,10 +123,21 @@ body{
   box-shadow: var(--shadowB);
 }
 
+.nav-title{
+  text-align: center;
+  font-size: 16px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 .nav-menu{
   position: absolute;
   top: calc(100% + 6px);
-  right: 0;
+  right: 18px;
   min-width: 210px;
   display: grid;
   gap: 8px;
@@ -158,6 +172,23 @@ body{
 .nav-home:active,
 .nav-menu-btn:active,
 .nav-menu a:active{ transform: scale(0.99); }
+
+@media (max-width: 420px){
+  .nav{
+    grid-template-columns: 40px minmax(0, 1fr) 40px;
+    gap: 10px;
+    padding: 10px 14px;
+  }
+
+  .nav-menu{
+    right: 14px;
+  }
+
+  .nav-title{
+    font-size: 14px;
+    letter-spacing: 0.03em;
+  }
+}
 
 /* Centered card */
 .container{
