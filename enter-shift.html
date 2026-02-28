@@ -61,10 +61,11 @@
     </div>
 
     <div id="shiftVehicleRow">
-      <label>Vehicle</label>
-      <div class="combo-wrap" id="vehicleComboWrap">
-        <input type="text" id="vehicle" placeholder="Registration" autocomplete="off">
-        <div id="vehicleMenu" class="combo-menu" hidden></div>
+      <label>Vehicles</label>
+      <div id="shiftVehicleEntries"></div>
+      <datalist id="assignedVehicleOptions"></datalist>
+      <div style="margin-top:10px;">
+        <button type="button" class="button-secondary" style="width:auto;" onclick="addVehicleEntry()">Add Vehicle</button>
       </div>
     </div>
 
@@ -74,22 +75,6 @@
 
       <label>Trailer 2</label>
       <input type="text" id="trailer2">
-    </div>
-
-    <div id="shiftMileageRows">
-      <div class="grid">
-        <div>
-          <label>Start Mileage</label>
-          <input type="number" id="startMileage" min="0" step="1" placeholder="e.g. 124000">
-        </div>
-        <div>
-          <label>Finish Mileage</label>
-          <input type="number" id="finishMileage" min="0" step="1" placeholder="e.g. 124320">
-        </div>
-      </div>
-
-      <label>Mileage Done</label>
-      <input type="number" id="mileageDone" min="0" step="1" readonly>
     </div>
 
     <label>Defects/Notes</label>

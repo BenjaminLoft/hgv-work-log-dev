@@ -8,6 +8,7 @@
 
 const DATA_MODEL_VERSION = 8;
 const DATA_VERSION_KEY = "dataVersion";
+const FOUR_WEEK_BLOCK_ANCHOR = "2024-01-01";
 const DEFAULT_SETTINGS = {
   defaultStart: "",
   defaultFinish: "",
@@ -178,6 +179,9 @@ function normalizeCompany(src, fallbackSettings = {}) {
     defaultStart: String(c.defaultStart ?? fallback.defaultStart ?? ""),
     defaultFinish: String(c.defaultFinish ?? fallback.defaultFinish ?? ""),
     annualLeaveAllowance: Number(c.annualLeaveAllowance ?? fallback.annualLeaveAllowance ?? 0),
+    fourWeekCycleStart: /^\d{4}-\d{2}-\d{2}$/.test(String(c.fourWeekCycleStart || ""))
+      ? String(c.fourWeekCycleStart)
+      : FOUR_WEEK_BLOCK_ANCHOR,
     nightOutPay: Number(c.nightOutPay || 0),
     dailyOTAfterWorkedHours: Number(c.dailyOTAfterWorkedHours || 0),
     minPaidShiftHours: Number(c.minPaidShiftHours || 0),
@@ -215,6 +219,13 @@ function normalizeShift(src) {
   if (rawOverrides.payMode === "daily" || rawOverrides.payMode === "weekly") {
     normalizedOverrides.payMode = rawOverrides.payMode;
   }
+  const normalizedVehicleEntries = normalizeVehicleEntries(Array.isArray(s.vehicleEntries) ? s.vehicleEntries : []);
+  const vehicleLabel = normalizedVehicleEntries
+    .map(entry => String(entry.vehicle || "").trim())
+    .filter(Boolean)
+    .join(" • ");
+  const firstVehicleEntry = normalizedVehicleEntries[0] || {};
+  const totalMileage = normalizedVehicleEntries.reduce((sum, entry) => sum + Number(entry.mileage || 0), 0);
 
   return {
     ...s,
@@ -223,7 +234,7 @@ function normalizeShift(src) {
     date: String(s.date || ""),
     start: String(s.start || ""),
     finish: String(s.finish || ""),
-    vehicle: String(s.vehicle || "").toUpperCase().trim(),
+    vehicle: vehicleLabel,
     trailer1: String(s.trailer1 || ""),
     trailer2: String(s.trailer2 || ""),
     defects: String(s.defects || s.notes || ""),
@@ -232,9 +243,9 @@ function normalizeShift(src) {
     sickDay: !!s.sickDay,
     bankHoliday: !!s.bankHoliday,
     dayOffInLieu: !!(s.dayOffInLieu || s.toilDay || s.dayInLieu),
-    startMileage: Number(s.startMileage || 0),
-    finishMileage: Number(s.finishMileage || 0),
-    mileage: Number(s.mileage || Math.max(0, Number(s.finishMileage || 0) - Number(s.startMileage || 0))),
+    startMileage: Number(firstVehicleEntry.startMileage || 0),
+    finishMileage: Number(firstVehicleEntry.finishMileage || 0),
+    mileage: Number(totalMileage || 0),
     shiftType: s.shiftType === "night" ? "night" : "day",
     expenses: {
       parking: Number(expenses.parking || 0),
@@ -243,8 +254,37 @@ function normalizeShift(src) {
     nightOut: !!(s.nightOut || nightOutCountRaw > 0 || nightOutPayRaw > 0),
     nightOutCount: Math.max(0, nightOutCountRaw),
     nightOutPay: Math.max(0, nightOutPayRaw),
-    overrides: normalizedOverrides
+    overrides: normalizedOverrides,
+    vehicleEntries: normalizedVehicleEntries
   };
+}
+
+function normalizeVehicleEntries(entries) {
+  const source = Array.isArray(entries) ? entries : [];
+  const normalized = source.map(item => {
+    const entry = (item && typeof item === "object") ? item : {};
+    const vehicle = String(entry.vehicle || "").toUpperCase().trim();
+    const startMileage = Number(entry.startMileage || 0);
+    const finishMileage = Number(entry.finishMileage || 0);
+    const explicitMileage = Number(entry.mileage);
+    const mileage = Number.isFinite(explicitMileage)
+      ? Math.max(0, explicitMileage)
+      : Math.max(0, finishMileage - startMileage);
+
+    return {
+      vehicle,
+      startMileage,
+      finishMileage,
+      mileage
+    };
+  });
+
+  return normalized.filter(entry =>
+    entry.vehicle ||
+    entry.startMileage > 0 ||
+    entry.finishMileage > 0 ||
+    entry.mileage > 0
+  );
 }
 
 function migrateData(sourceVersion = getStoredDataVersion()) {
@@ -326,9 +366,9 @@ function syncSummaryPeriodModeUI() {
 
   if (monthBtn) monthBtn.classList.toggle("is-active", mode === "month");
   if (fourBtn) fourBtn.classList.toggle("is-active", mode === "four_week");
-  if (titleEl) titleEl.textContent = mode === "four_week" ? "Last 4 Weeks" : "Month";
-  if (breakdownEl) breakdownEl.textContent = mode === "four_week" ? "4-week breakdown" : "Monthly breakdown";
-  if (exportBtn) exportBtn.textContent = mode === "four_week" ? "Export 4-Week Payslip (PDF)" : "Export Month Payslip (PDF)";
+  if (titleEl) titleEl.textContent = mode === "four_week" ? "Current 4-Week Block" : "Month";
+  if (breakdownEl) breakdownEl.textContent = mode === "four_week" ? "4-week block breakdown" : "Monthly breakdown";
+  if (exportBtn) exportBtn.textContent = mode === "four_week" ? "Export 4-Week Block Payslip (PDF)" : "Export Month Payslip (PDF)";
 }
 /* ===============================
    DEFAULT COMPANY / DEFAULT SELECTION
@@ -356,6 +396,7 @@ function ensureDefaultCompany() {
     defaultStart: settings.defaultStart ?? "",
     defaultFinish: settings.defaultFinish ?? "",
     annualLeaveAllowance: settings.annualLeaveAllowance ?? 0,
+    fourWeekCycleStart: FOUR_WEEK_BLOCK_ANCHOR,
     nightBonus: {
       mode: "none",                    // "none" | "per_hour" | "per_shift" | "per_week"
       amount: 0.50,
@@ -395,6 +436,7 @@ function getCompanyFormSeedValues() {
     defaultStart: String(source?.defaultStart || ""),
     defaultFinish: String(source?.defaultFinish || ""),
     annualLeaveAllowance: Number(source?.annualLeaveAllowance || 0),
+    fourWeekCycleStart: String(source?.fourWeekCycleStart || FOUR_WEEK_BLOCK_ANCHOR),
     otWeekday: Number(source?.ot?.weekday || 1),
     otSaturday: Number(source?.ot?.saturday || 1),
     otSunday: Number(source?.ot?.sunday || 1),
@@ -571,6 +613,7 @@ function renderCompanies() {
 		  ${c.standardShiftLength ? `Std shift length: ${Number(c.standardShiftLength || 0).toFixed(2)} hrs<br>` : ""}
           ${(c.defaultStart || c.defaultFinish) ? `Defaults: ${escapeHtml(c.defaultStart || "--:--")} - ${escapeHtml(c.defaultFinish || "--:--")}<br>` : ""}
           Leave allowance: ${Number(c.annualLeaveAllowance || 0).toFixed(0)} days<br>
+          4-week cycle start: ${escapeHtml(c.fourWeekCycleStart || FOUR_WEEK_BLOCK_ANCHOR)}<br>
           Night out pay: £${Number(c.nightOutPay || 0).toFixed(2)}<br>
           Weekly base: ${Number(c.baseWeeklyHours || 0).toFixed(2)} hrs<br>
           ${(c.payMode === "daily")
@@ -619,6 +662,9 @@ function addOrUpdateCompany() {
 
   if (!name) return alert("Please enter a company name");
   if (!Number.isFinite(baseRate)) return alert("Please enter a valid hourly rate");
+  const fourWeekCycleStart = String(document.getElementById("companyFourWeekCycleStart")?.value || "").trim() || FOUR_WEEK_BLOCK_ANCHOR;
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(fourWeekCycleStart)) return alert("Please enter a valid 4-week cycle start date.");
+  if (dateOnlyToDate(fourWeekCycleStart).getDay() !== 1) return alert("4-week cycle start date must be a Monday.");
 
   const bonusType = document.getElementById("bonusType")?.value || "none";
   const bonusMode = document.getElementById("bonusMode")?.value || "per_hour";
@@ -657,6 +703,7 @@ function addOrUpdateCompany() {
 	defaultStart: document.getElementById("companyDefaultStart")?.value || "",
 	defaultFinish: document.getElementById("companyDefaultFinish")?.value || "",
 	annualLeaveAllowance: Number(document.getElementById("companyAnnualLeaveAllowance")?.value) || 0,
+	fourWeekCycleStart,
 	nightOutPay: Number(document.getElementById("companyNightOutPay")?.value) || 0,
 	dailyOTAfterWorkedHours: Number(document.getElementById("dailyOTAfterWorkedHours")?.value) || 0,
 	minPaidShiftHours: Number(document.getElementById("minPaidShiftHours")?.value) || 0,
@@ -737,6 +784,7 @@ function editCompany(id) {
   setVal("companyDefaultStart", c.defaultStart);
   setVal("companyDefaultFinish", c.defaultFinish);
   setVal("companyAnnualLeaveAllowance", c.annualLeaveAllowance);
+  setVal("companyFourWeekCycleStart", c.fourWeekCycleStart || FOUR_WEEK_BLOCK_ANCHOR);
 
   // Bonus
   const bonus = getPrimaryBonusRule(c);
@@ -818,6 +866,7 @@ function resetCompanyForm() {
     "companyId", "companyName", "companyBaseRate",
     "payMode", "baseWeeklyHours", "dailyOTAfterWorkedHours", "minPaidShiftHours",
     "companyDefaultStart", "companyDefaultFinish", "companyAnnualLeaveAllowance",
+    "companyFourWeekCycleStart",
     "otWeekday", "otSaturday", "otSunday", "otBankHoliday",
     "companyNightOutPay",
     "bonusType", "bonusMode", "bonusAmount", "bonusStart", "bonusEnd",
@@ -839,6 +888,7 @@ function resetCompanyForm() {
   if (document.getElementById("companyDefaultStart")) document.getElementById("companyDefaultStart").value = seed.defaultStart;
   if (document.getElementById("companyDefaultFinish")) document.getElementById("companyDefaultFinish").value = seed.defaultFinish;
   if (document.getElementById("companyAnnualLeaveAllowance")) document.getElementById("companyAnnualLeaveAllowance").value = seed.annualLeaveAllowance;
+  if (document.getElementById("companyFourWeekCycleStart")) document.getElementById("companyFourWeekCycleStart").value = seed.fourWeekCycleStart;
   if (document.getElementById("companyNightOutPay")) document.getElementById("companyNightOutPay").value = 0;
 
   if (document.getElementById("otWeekday")) document.getElementById("otWeekday").value = seed.otWeekday;
@@ -1172,8 +1222,7 @@ function applyDefaultsToShiftEntry({ force = false } = {}) {
 function applyCompanyShiftEntryVisibility(companyId) {
   const vehicleRow = document.getElementById("shiftVehicleRow");
   const trailerRows = document.getElementById("shiftTrailerRows");
-  const mileageRows = document.getElementById("shiftMileageRows");
-  if (!vehicleRow && !trailerRows && !mileageRows) return;
+  if (!vehicleRow && !trailerRows) return;
 
   const c = getCompanyById(companyId);
   const showVehicle = c ? (c.showVehicleField !== false) : true;
@@ -1181,11 +1230,7 @@ function applyCompanyShiftEntryVisibility(companyId) {
   const showMileage = c ? !!c.showMileageFields : false;
 
   if (vehicleRow) {
-    vehicleRow.hidden = !showVehicle;
-    if (!showVehicle) {
-      const vehicleInput = document.getElementById("vehicle");
-      if (vehicleInput) vehicleInput.value = "";
-    }
+    vehicleRow.hidden = !(showVehicle || showMileage);
   }
 
   if (trailerRows) {
@@ -1198,37 +1243,14 @@ function applyCompanyShiftEntryVisibility(companyId) {
     }
   }
 
-  if (mileageRows) {
-    mileageRows.hidden = !showMileage;
-    if (!showMileage) {
-      const startMileage = document.getElementById("startMileage");
-      const finishMileage = document.getElementById("finishMileage");
-      const mileageDone = document.getElementById("mileageDone");
-      if (startMileage) startMileage.value = "";
-      if (finishMileage) finishMileage.value = "";
-      if (mileageDone) mileageDone.value = "";
-    } else {
-      updateMileageDone();
-    }
-  }
+  renderAssignedVehicleOptions(companyId);
+  renderShiftVehicleEntries(readShiftVehicleEntries(showMileage), { showVehicle, showMileage, preserveEmpty: true });
 }
 
 function getDefaultDateForShiftType(type) {
   const d = new Date();
   if (type === "night") d.setDate(d.getDate() - 1);
   return d.toISOString().slice(0, 10);
-}
-
-function updateMileageDone() {
-  const startEl = document.getElementById("startMileage");
-  const finishEl = document.getElementById("finishMileage");
-  const doneEl = document.getElementById("mileageDone");
-  if (!startEl || !finishEl || !doneEl) return;
-
-  const start = Number(startEl.value || 0);
-  const finish = Number(finishEl.value || 0);
-  const miles = Math.max(0, finish - start);
-  doneEl.value = (startEl.value || finishEl.value) ? String(miles) : "";
 }
 
 function initShiftTypeBehavior() {
@@ -1242,12 +1264,157 @@ function initShiftTypeBehavior() {
   });
 }
 
-function initMileageBehavior() {
-  const startEl = document.getElementById("startMileage");
-  const finishEl = document.getElementById("finishMileage");
-  if (!startEl || !finishEl) return;
-  startEl.addEventListener("input", updateMileageDone);
-  finishEl.addEventListener("input", updateMileageDone);
+function renderAssignedVehicleOptions(companyId = document.getElementById("company")?.value || "") {
+  const list = document.getElementById("assignedVehicleOptions");
+  if (!list) return;
+  const source = companyId ? getCompanyAssignedVehicles(companyId) : vehicles.slice();
+  list.innerHTML = source
+    .slice()
+    .sort((a, b) => a.localeCompare(b))
+    .map(v => `<option value="${escapeHtml(v)}"></option>`)
+    .join("");
+}
+
+function createVehicleEntry(entry = {}, showVehicle = true, showMileage = false, canRemove = true) {
+  const vehicle = String(entry.vehicle || "").toUpperCase().trim();
+  const startMileage = Number(entry.startMileage || 0);
+  const finishMileage = Number(entry.finishMileage || 0);
+  const mileage = Number(entry.mileage || Math.max(0, finishMileage - startMileage) || 0);
+
+  return `
+    <div class="shift-card vehicle-entry" style="margin-top:10px;">
+      <div style="display:flex; justify-content:space-between; align-items:center; gap:10px; margin-bottom:10px;">
+        <strong>Vehicle Entry</strong>
+        ${canRemove ? `<button type="button" class="button-secondary vehicle-entry-remove" style="width:auto;">Remove</button>` : ""}
+      </div>
+      ${showVehicle ? `
+        <label style="margin-top:0;">Vehicle</label>
+        <input type="text" class="vehicle-entry-vehicle" list="assignedVehicleOptions" placeholder="Registration" autocomplete="off" value="${escapeHtml(vehicle)}">
+      ` : ""}
+      ${showMileage ? `
+        <div class="grid">
+          <div>
+            <label>Start Mileage</label>
+            <input type="number" class="vehicle-entry-start" min="0" step="1" placeholder="e.g. 124000" value="${startMileage > 0 ? escapeHtml(String(startMileage)) : ""}">
+          </div>
+          <div>
+            <label>Finish Mileage</label>
+            <input type="number" class="vehicle-entry-finish" min="0" step="1" placeholder="e.g. 124320" value="${finishMileage > 0 ? escapeHtml(String(finishMileage)) : ""}">
+          </div>
+        </div>
+        <label>Mileage Done</label>
+        <input type="number" class="vehicle-entry-mileage" min="0" step="1" readonly value="${(startMileage > 0 || finishMileage > 0 || mileage > 0) ? escapeHtml(String(mileage)) : ""}">
+      ` : ""}
+    </div>
+  `;
+}
+
+function updateVehicleEntryMileageDone(row) {
+  const startEl = row?.querySelector(".vehicle-entry-start");
+  const finishEl = row?.querySelector(".vehicle-entry-finish");
+  const doneEl = row?.querySelector(".vehicle-entry-mileage");
+  if (!startEl || !finishEl || !doneEl) return;
+
+  const start = Number(startEl.value || 0);
+  const finish = Number(finishEl.value || 0);
+  const miles = Math.max(0, finish - start);
+  doneEl.value = (startEl.value || finishEl.value) ? String(miles) : "";
+}
+
+function readShiftVehicleEntries(showMileage = null) {
+  const companyId = document.getElementById("company")?.value || "";
+  const showMileageResolved = showMileage === null
+    ? !!getCompanyById(companyId)?.showMileageFields
+    : !!showMileage;
+  const wrap = document.getElementById("shiftVehicleEntries");
+  if (!wrap) return [];
+
+  return normalizeVehicleEntries([...wrap.querySelectorAll(".vehicle-entry")].map(row => {
+    const vehicle = String(row.querySelector(".vehicle-entry-vehicle")?.value || "").toUpperCase().trim();
+    const startMileage = showMileageResolved ? Number(row.querySelector(".vehicle-entry-start")?.value || 0) : 0;
+    const finishMileage = showMileageResolved ? Number(row.querySelector(".vehicle-entry-finish")?.value || 0) : 0;
+    return {
+      vehicle,
+      startMileage,
+      finishMileage,
+      mileage: showMileageResolved ? Math.max(0, finishMileage - startMileage) : 0
+    };
+  }));
+}
+
+function renderShiftVehicleEntries(entries = [], options = {}) {
+  const wrap = document.getElementById("shiftVehicleEntries");
+  if (!wrap) return;
+  const companyId = document.getElementById("company")?.value || "";
+  const company = getCompanyById(companyId);
+  const showVehicle = options.showVehicle ?? (company ? (company.showVehicleField !== false) : true);
+  const showMileage = options.showMileage ?? !!company?.showMileageFields;
+  let normalized = normalizeVehicleEntries(entries);
+  if (!normalized.length && options.preserveEmpty !== false) normalized = [{}];
+
+  wrap.innerHTML = normalized
+    .map((entry, index) => createVehicleEntry(entry, showVehicle, showMileage, normalized.length > 1 || index > 0))
+    .join("");
+
+  wrap.querySelectorAll(".vehicle-entry").forEach(updateVehicleEntryMileageDone);
+}
+
+function addVehicleEntry() {
+  const companyId = document.getElementById("company")?.value || "";
+  const company = getCompanyById(companyId);
+  const showMileage = !!company?.showMileageFields;
+  const entries = readShiftVehicleEntries(showMileage);
+  entries.push({});
+  renderShiftVehicleEntries(entries, { showVehicle: company ? (company.showVehicleField !== false) : true, showMileage, preserveEmpty: true });
+}
+
+function initVehicleEntryBehavior() {
+  const wrap = document.getElementById("shiftVehicleEntries");
+  const companyEl = document.getElementById("company");
+  if (!wrap) return;
+
+  wrap.addEventListener("input", (e) => {
+    if (e.target.matches(".vehicle-entry-vehicle")) {
+      const start = e.target.selectionStart || 0;
+      const end = e.target.selectionEnd || 0;
+      e.target.value = (e.target.value || "").toUpperCase().replace(/\s+/g, " ").trimStart();
+      e.target.setSelectionRange(start, end);
+      return;
+    }
+
+    const row = e.target.closest(".vehicle-entry");
+    if (!row) return;
+    if (e.target.matches(".vehicle-entry-start, .vehicle-entry-finish")) {
+      updateVehicleEntryMileageDone(row);
+    }
+  });
+
+  wrap.addEventListener("change", (e) => {
+    if (e.target.matches(".vehicle-entry-vehicle")) {
+      e.target.value = (e.target.value || "").toUpperCase().trim();
+    }
+  });
+
+  wrap.addEventListener("click", (e) => {
+    const btn = e.target.closest(".vehicle-entry-remove");
+    if (!btn) return;
+    const companyId = document.getElementById("company")?.value || "";
+    const showMileage = !!getCompanyById(companyId)?.showMileageFields;
+    const rows = [...wrap.querySelectorAll(".vehicle-entry")];
+    const idx = rows.indexOf(btn.closest(".vehicle-entry"));
+    if (idx < 0) return;
+    const entries = readShiftVehicleEntries(showMileage);
+    entries.splice(idx, 1);
+    renderShiftVehicleEntries(entries, { preserveEmpty: true });
+  });
+
+  if (companyEl) {
+    companyEl.addEventListener("change", () => {
+      applyCompanyShiftEntryVisibility(companyEl.value);
+      applyDefaultsToShiftEntry();
+      initNightOutBehavior();
+    });
+  }
 }
 
 function initLeaveCheckboxBehavior() {
@@ -1336,16 +1503,16 @@ function addOrUpdateShift() {
   const showMileage = company ? !!company.showMileageFields : false;
   const leavePaidHours = Math.max(0, clamp0(company?.standardShiftLength || 9) - 1);
 
-  const vehicleRaw = showVehicle ? (document.getElementById("vehicle")?.value || "") : "";
-  const vehicle = vehicleRaw.toUpperCase().trim();
+  const vehicleEntries = readShiftVehicleEntries(showMileage);
+  const vehicle = vehicleEntries.map(entry => entry.vehicle).filter(Boolean).join(" • ");
+  const startMileage = Number(vehicleEntries[0]?.startMileage || 0);
+  const finishMileage = Number(vehicleEntries[0]?.finishMileage || 0);
+  const mileage = vehicleEntries.reduce((sum, entry) => sum + Number(entry.mileage || 0), 0);
   const shiftType = document.getElementById("shiftType")?.value || "day";
   const isAnnualLeave = !!document.getElementById("annualLeave")?.checked;
   const isSickDay = !!document.getElementById("sickDay")?.checked;
   const hasDayOffInLieu = !!document.getElementById("dayOffInLieu")?.checked;
   const isNightOut = !!document.getElementById("nightOut")?.checked;
-  const startMileage = showMileage ? Number(document.getElementById("startMileage")?.value || 0) : 0;
-  const finishMileage = showMileage ? Number(document.getElementById("finishMileage")?.value || 0) : 0;
-  const mileage = showMileage ? Math.max(0, finishMileage - startMileage) : 0;
   const expenseParking = Number(document.getElementById("expenseParking")?.value || 0);
   const expenseTolls = Number(document.getElementById("expenseTolls")?.value || 0);
   const nightOutPayRate = Number(company?.nightOutPay || 0);
@@ -1359,10 +1526,12 @@ function addOrUpdateShift() {
     return alert("Day off in lieu can only be added to worked shifts.");
   }
 
-  if (vehicle && !vehicles.includes(vehicle)) {
-    vehicles.push(vehicle);
-  }
-  if (vehicle) ensureVehicleAssignedToCompany(companyId, vehicle);
+  vehicleEntries.forEach(entry => {
+    if (entry.vehicle && !vehicles.includes(entry.vehicle)) {
+      vehicles.push(entry.vehicle);
+    }
+    if (entry.vehicle) ensureVehicleAssignedToCompany(companyId, entry.vehicle);
+  });
   const existingOverrides = (editingIndex !== null && shifts[editingIndex]?.overrides) ? shifts[editingIndex].overrides : {};
   const overrides = buildShiftOverrides(existingOverrides);
 
@@ -1375,6 +1544,7 @@ function addOrUpdateShift() {
     finish: document.getElementById("finish")?.value || "",
     shiftType,
     vehicle,
+    vehicleEntries,
     trailer1: showTrailers ? (document.getElementById("trailer1")?.value || "") : "",
     trailer2: showTrailers ? (document.getElementById("trailer2")?.value || "") : "",
     startMileage,
@@ -1446,15 +1616,13 @@ function clearForm() {
   const shiftType = document.getElementById("shiftType");
   if (shiftType) shiftType.value = "day";
 
-  const vehicle = document.getElementById("vehicle");
-  if (vehicle) vehicle.value = "";
-  const mileageDone = document.getElementById("mileageDone");
-  if (mileageDone) mileageDone.value = "";
-
   // keep company selection if still selected; otherwise re-pick default
   const company = document.getElementById("company");
   if (!company || !company.value) renderCompanyDropdowns();
   else applyCompanyShiftEntryVisibility(company.value);
+
+  renderAssignedVehicleOptions(company?.value || "");
+  renderShiftVehicleEntries([{}], { preserveEmpty: true });
 
   // re-apply defaults (this fixes your “start time blank after reset” issue)
   applyDefaultsToShiftEntry();
@@ -1808,8 +1976,14 @@ function dateOnlyToDate(dateStr) {
 }
 
 function getCurrentFourWeekRange() {
-  const weekStart = getCurrentWeekStartMonday();
-  const start = addDays(weekStart, -21);
+  const anchor = dateOnlyToDate(getSummaryFourWeekCycleStart());
+  anchor.setHours(0, 0, 0, 0);
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+
+  const diffDays = Math.floor((today - anchor) / (1000 * 60 * 60 * 24));
+  const blockIndex = Math.floor(diffDays / 28);
+  const start = addDays(anchor, blockIndex * 28);
   start.setHours(0, 0, 0, 0);
 
   const endExclusive = addDays(start, 28);
@@ -1825,6 +1999,28 @@ function getCurrentFourWeekRange() {
     startStr: start.toISOString().slice(0, 10),
     endStr: endInclusive.toISOString().slice(0, 10)
   };
+}
+
+function getSummaryCycleCompany() {
+  ensureDefaultCompany();
+  const defaultId = getDefaultCompanyId();
+  return getCompanyById(defaultId) || getSelectableCompanies()[0] || companies[0] || null;
+}
+
+function getSummaryFourWeekCycleStart() {
+  return String(getSummaryCycleCompany()?.fourWeekCycleStart || FOUR_WEEK_BLOCK_ANCHOR);
+}
+
+function validateCompanyCycleStartDate(input) {
+  const el = input || document.getElementById("companyFourWeekCycleStart");
+  if (!el) return true;
+  const value = String(el.value || "").trim();
+  if (!value) return true;
+  if (dateOnlyToDate(value).getDay() === 1) return true;
+  alert("4-week cycle start date must be a Monday.");
+  el.value = "";
+  el.focus();
+  return false;
 }
 
 const TILE_SPECS = {
@@ -1994,7 +2190,7 @@ function renderCompanySummary() {
 
   ensureDefaultCompany();
   const summaryMode = getSummaryPeriodMode();
-  const monthLabel = summaryMode === "four_week" ? "Last 4 Weeks" : "This Month";
+  const monthLabel = summaryMode === "four_week" ? "Current 4-Week Block" : "This Month";
 
   const weekStart = getCurrentWeekStartMonday();
   const weekEnd = addDays(weekStart, 7);
@@ -2589,6 +2785,26 @@ function getShiftCompensationDetails(shift) {
   };
 }
 
+function getVehicleEntriesForDisplay(shift) {
+  return normalizeVehicleEntries(Array.isArray(shift?.vehicleEntries) ? shift.vehicleEntries : []);
+}
+
+function formatVehicleEntryLabel(entry) {
+  const vehicle = String(entry?.vehicle || "").trim();
+  const mileage = Number(entry?.mileage || 0);
+  const startMileage = Number(entry?.startMileage || 0);
+  const finishMileage = Number(entry?.finishMileage || 0);
+  const hasMileage = mileage > 0 || startMileage > 0 || finishMileage > 0;
+
+  if (!hasMileage) return vehicle;
+
+  const detail = (startMileage > 0 || finishMileage > 0)
+    ? `${mileage.toFixed(0)} (${startMileage.toFixed(0)} -> ${finishMileage.toFixed(0)})`
+    : mileage.toFixed(0);
+
+  return vehicle ? `${vehicle}: ${detail}` : detail;
+}
+
 function formatShiftLine(s, index) {
   const companyName = getCompanyById(s.companyId)?.name || "Unknown Company";
   const flags = [s.shiftType === "night" ? "NIGHT" : "", s.annualLeave ? "AL" : "", s.sickDay ? "SICK" : "", s.bankHoliday ? "BH" : "", s.dayOffInLieu ? "TOIL" : ""].filter(Boolean).join(" ");
@@ -2598,14 +2814,12 @@ function formatShiftLine(s, index) {
   const trailerInfo = [s.trailer1, s.trailer2].filter(Boolean).join(" • ");
   const shiftTypeLabel = s.shiftType === "night" ? "Night" : "Day";
   const timeRange = (s.start && s.finish) ? `${s.start} - ${s.finish}` : "";
-  const vehicle = String(s.vehicle || "").trim();
-  const hasMileage = Number(s.mileage || 0) > 0 || Number(s.startMileage || 0) > 0 || Number(s.finishMileage || 0) > 0;
-  const mileageLabel = hasMileage
-    ? `Mileage: ${Number(s.mileage || 0).toFixed(0)}${Number(s.startMileage || 0) > 0 || Number(s.finishMileage || 0) > 0 ? ` (${Number(s.startMileage || 0).toFixed(0)} -> ${Number(s.finishMileage || 0).toFixed(0)})` : ""}`
+  const vehicleEntries = getVehicleEntriesForDisplay(s);
+  const vehicleInfoHtml = vehicleEntries.length
+    ? vehicleEntries.map(entry => `<div>${escapeHtml(formatVehicleEntryLabel(entry))}</div>`).join("")
     : "";
   const optionalInfo = [
-    vehicle ? `<div>Vehicle: ${escapeHtml(vehicle)}</div>` : "",
-    mileageLabel ? `<div>${escapeHtml(mileageLabel)}</div>` : "",
+    vehicleInfoHtml ? `<div>Vehicles:${vehicleInfoHtml}</div>` : "",
     trailerInfo ? `<div>Trailers: ${escapeHtml(trailerInfo)}</div>` : "",
     defects ? `<div>Defects/Notes: ${escapeHtml(defects).replaceAll("\n", "<br>")}</div>` : ""
   ].filter(Boolean).join("");
@@ -2734,12 +2948,8 @@ function loadShiftForEditingIfRequested() {
   setVal("start", s.start);
   setVal("finish", s.finish);
   setVal("shiftType", s.shiftType || "day");
-  setVal("vehicle", s.vehicle);
   setVal("trailer1", s.trailer1);
   setVal("trailer2", s.trailer2);
-  setVal("startMileage", s.startMileage || 0);
-  setVal("finishMileage", s.finishMileage || 0);
-  setVal("mileageDone", s.mileage || 0);
   setVal("expenseParking", s.expenses?.parking || 0);
   setVal("expenseTolls", s.expenses?.tolls || 0);
   setVal("overrideBaseRate", s.overrides?.baseRate);
@@ -2750,7 +2960,8 @@ function loadShiftForEditingIfRequested() {
   setVal("overrideOtBankHoliday", s.overrides?.otBankHoliday);
   setVal("company", s.companyId);
   applyCompanyShiftEntryVisibility(s.companyId);
-  renderVehicleMenuOptions(s.vehicle || "");
+  renderAssignedVehicleOptions(s.companyId);
+  renderShiftVehicleEntries(s.vehicleEntries, { preserveEmpty: true });
 
   const defectsEl = document.getElementById("defects");
   if (defectsEl) defectsEl.value = (s.defects ?? s.notes ?? "");
@@ -2953,12 +3164,16 @@ function buildPayslipHTML({ title, periodLabel, periodStart, periodEnd, overall,
     const companyName = getCompanyById(s.companyId)?.name || "Unknown Company";
     const flags = [s.annualLeave ? "AL" : "", s.sickDay ? "SICK" : "", s.bankHoliday ? "BH" : "", s.dayOffInLieu ? "TOIL" : ""].filter(Boolean).join(" ");
     const expenses = Number(s.expenses?.parking || 0) + Number(s.expenses?.tolls || 0);
+    const vehicleEntries = getVehicleEntriesForDisplay(s);
+    const vehicleCell = vehicleEntries.length
+      ? vehicleEntries.map(entry => `<div>${escapeHtml(formatVehicleEntryLabel(entry))}</div>`).join("")
+      : "";
     return `
       <tr>
         <td><strong>${escapeHtml(s.date)}</strong>${flags ? `<div class="small">${escapeHtml(flags)}</div>` : ""}</td>
         <td>${escapeHtml(companyName)}</td>
         <td>${escapeHtml(s.start || "")}–${escapeHtml(s.finish || "")}</td>
-        <td>${escapeHtml(s.vehicle || "")}</td>
+        <td>${vehicleCell}</td>
         <td class="right">${fmtHours(s.worked)}</td>
         <td class="right">${fmtHours(s.breaks)}</td>
         <td class="right">${fmtHours(s.paid)}</td>
@@ -3081,7 +3296,7 @@ function exportPayslip(period = "week") {
   if (period === "month") {
     if (getSummaryPeriodMode() === "four_week") {
       const r = getCurrentFourWeekRange();
-      periodLabel = "4 Weeks";
+      periodLabel = "Current 4-Week Block";
       periodStart = r.startStr;
       periodEnd = r.endStr;
 
@@ -3180,10 +3395,14 @@ document.addEventListener("DOMContentLoaded", () => {
   loadShiftForEditingIfRequested();
   loadShiftDateForNewEntryIfRequested();
   initShiftTypeBehavior();
-  initMileageBehavior();
+  initVehicleEntryBehavior();
   initLeaveCheckboxBehavior();
   initNightOutBehavior();
   applyDefaultsToShiftEntry();
+  if (editingIndex === null) {
+    renderAssignedVehicleOptions();
+    renderShiftVehicleEntries([{}], { preserveEmpty: true });
+  }
 
   // Summary page
   renderCurrentPeriodTiles();

@@ -26,6 +26,9 @@
 <div class="container">
   <div class="screen">
     <h1>Companies</h1>
+    <div class="small" style="margin-bottom:16px;">
+      If you are paid by an agency but work assignments for different client companies, set the agency as your default company. The default company drives 4-week cycle timing and other default company-based behavior.
+    </div>
 
     <!-- Toggle button -->
     <button class="button-secondary" type="button" id="toggleCompanyFormBtn">
@@ -75,6 +78,12 @@
 
       <label>Annual Leave Allowance (days/year)</label>
       <input type="number" step="1" min="0" id="companyAnnualLeaveAllowance" placeholder="e.g. 28">
+
+      <label>4-Week Cycle Start Date</label>
+      <input type="date" id="companyFourWeekCycleStart" onchange="validateCompanyCycleStartDate(this)">
+      <div class="small" style="margin-top:6px;">
+        Use the first Monday of this company's 4-week pay cycle.
+      </div>
 
       <h2>Bonus</h2>
 
