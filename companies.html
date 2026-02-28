@@ -64,6 +64,21 @@
       <label>Minimum paid shift hours (optional)</label>
       <input type="number" step="0.25" id="minPaidShiftHours" placeholder="e.g. 8">
 
+      <label>Pay Cycle</label>
+      <select id="companyPayCycle">
+        <option value="weekly">Weekly</option>
+        <option value="month">Monthly</option>
+        <option value="four_week">4-Weekly</option>
+      </select>
+
+      <div id="companyFourWeekCycleWrap">
+        <label>4-Week Cycle Start Date</label>
+        <input type="date" id="companyFourWeekCycleStart" onchange="validateCompanyCycleStartDate(this)">
+        <div class="small" style="margin-top:6px;">
+          Use the first Monday of this company's 4-week pay cycle.
+        </div>
+      </div>
+
       <h2>Defaults & Leave</h2>
       <div class="grid">
         <div>
@@ -78,12 +93,6 @@
 
       <label>Annual Leave Allowance (days/year)</label>
       <input type="number" step="1" min="0" id="companyAnnualLeaveAllowance" placeholder="e.g. 28">
-
-      <label>4-Week Cycle Start Date</label>
-      <input type="date" id="companyFourWeekCycleStart" onchange="validateCompanyCycleStartDate(this)">
-      <div class="small" style="margin-top:6px;">
-        Use the first Monday of this company's 4-week pay cycle.
-      </div>
 
       <h2>Bonus</h2>
 

@@ -173,6 +173,7 @@ function normalizeCompany(src, fallbackSettings = {}) {
     name: String(c.name || "Company"),
     baseRate: Number(c.baseRate || 0),
     payMode: (c.payMode === "daily") ? "daily" : "weekly",
+    payCycle: (c.payCycle === "weekly" || c.payCycle === "month" || c.payCycle === "four_week") ? c.payCycle : "weekly",
     baseWeeklyHours: Number(c.baseWeeklyHours || 0),
     baseDailyPaidHours: Number(c.baseDailyPaidHours || 0),
     standardShiftLength: Number(c.standardShiftLength || 0),
@@ -343,13 +344,17 @@ function initSummaryTabs() {
   syncSummaryPeriodModeUI();
 }
 
+function isSummaryFourWeekAvailable() {
+  return (getSummaryCycleCompany()?.payCycle || "weekly") === "four_week";
+}
+
 function getSummaryPeriodMode() {
   const mode = String(settings?.summaryPeriodMode || "month");
-  return (mode === "four_week") ? "four_week" : "month";
+  return (mode === "four_week" && isSummaryFourWeekAvailable()) ? "four_week" : "month";
 }
 
 function setSummaryPeriodMode(mode) {
-  settings.summaryPeriodMode = (mode === "four_week") ? "four_week" : "month";
+  settings.summaryPeriodMode = (mode === "four_week" && isSummaryFourWeekAvailable()) ? "four_week" : "month";
   saveAll();
   syncSummaryPeriodModeUI();
   renderCurrentPeriodTiles();
@@ -358,14 +363,24 @@ function setSummaryPeriodMode(mode) {
 
 function syncSummaryPeriodModeUI() {
   const mode = getSummaryPeriodMode();
+  const fourWeekAvailable = isSummaryFourWeekAvailable();
   const monthBtn = document.getElementById("periodMonthBtn");
   const fourBtn = document.getElementById("periodFourWeekBtn");
   const titleEl = document.getElementById("summaryPeriodLabel");
   const breakdownEl = document.getElementById("monthlyBreakdownSummary");
   const exportBtn = document.getElementById("exportSummaryPeriodBtn");
 
+  if (!fourWeekAvailable && settings.summaryPeriodMode === "four_week") {
+    settings.summaryPeriodMode = "month";
+    saveAll();
+  }
+
   if (monthBtn) monthBtn.classList.toggle("is-active", mode === "month");
-  if (fourBtn) fourBtn.classList.toggle("is-active", mode === "four_week");
+  if (fourBtn) {
+    fourBtn.classList.toggle("is-active", mode === "four_week");
+    fourBtn.hidden = !fourWeekAvailable;
+    fourBtn.style.display = fourWeekAvailable ? "" : "none";
+  }
   if (titleEl) titleEl.textContent = mode === "four_week" ? "Current 4-Week Block" : "Month";
   if (breakdownEl) breakdownEl.textContent = mode === "four_week" ? "4-week block breakdown" : "Monthly breakdown";
   if (exportBtn) exportBtn.textContent = mode === "four_week" ? "Export 4-Week Block Payslip (PDF)" : "Export Month Payslip (PDF)";
@@ -436,6 +451,7 @@ function getCompanyFormSeedValues() {
     defaultStart: String(source?.defaultStart || ""),
     defaultFinish: String(source?.defaultFinish || ""),
     annualLeaveAllowance: Number(source?.annualLeaveAllowance || 0),
+    payCycle: String(source?.payCycle || "weekly"),
     fourWeekCycleStart: String(source?.fourWeekCycleStart || FOUR_WEEK_BLOCK_ANCHOR),
     otWeekday: Number(source?.ot?.weekday || 1),
     otSaturday: Number(source?.ot?.saturday || 1),
@@ -613,7 +629,8 @@ function renderCompanies() {
 		  ${c.standardShiftLength ? `Std shift length: ${Number(c.standardShiftLength || 0).toFixed(2)} hrs<br>` : ""}
           ${(c.defaultStart || c.defaultFinish) ? `Defaults: ${escapeHtml(c.defaultStart || "--:--")} - ${escapeHtml(c.defaultFinish || "--:--")}<br>` : ""}
           Leave allowance: ${Number(c.annualLeaveAllowance || 0).toFixed(0)} days<br>
-          4-week cycle start: ${escapeHtml(c.fourWeekCycleStart || FOUR_WEEK_BLOCK_ANCHOR)}<br>
+          Pay cycle: ${escapeHtml(c.payCycle === "four_week" ? "4-weekly" : (c.payCycle === "month" ? "Monthly" : "Weekly"))}<br>
+          ${c.payCycle === "four_week" ? `4-week cycle start: ${escapeHtml(c.fourWeekCycleStart || FOUR_WEEK_BLOCK_ANCHOR)}<br>` : ""}
           Night out pay: £${Number(c.nightOutPay || 0).toFixed(2)}<br>
           Weekly base: ${Number(c.baseWeeklyHours || 0).toFixed(2)} hrs<br>
           ${(c.payMode === "daily")
@@ -662,9 +679,12 @@ function addOrUpdateCompany() {
 
   if (!name) return alert("Please enter a company name");
   if (!Number.isFinite(baseRate)) return alert("Please enter a valid hourly rate");
+  const payCycle = document.getElementById("companyPayCycle")?.value || "weekly";
   const fourWeekCycleStart = String(document.getElementById("companyFourWeekCycleStart")?.value || "").trim() || FOUR_WEEK_BLOCK_ANCHOR;
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(fourWeekCycleStart)) return alert("Please enter a valid 4-week cycle start date.");
-  if (dateOnlyToDate(fourWeekCycleStart).getDay() !== 1) return alert("4-week cycle start date must be a Monday.");
+  if (payCycle === "four_week") {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(fourWeekCycleStart)) return alert("Please enter a valid 4-week cycle start date.");
+    if (dateOnlyToDate(fourWeekCycleStart).getDay() !== 1) return alert("4-week cycle start date must be a Monday.");
+  }
 
   const bonusType = document.getElementById("bonusType")?.value || "none";
   const bonusMode = document.getElementById("bonusMode")?.value || "per_hour";
@@ -697,6 +717,7 @@ function addOrUpdateCompany() {
     baseRate,
 
     payMode: document.getElementById("payMode")?.value || "weekly",
+	payCycle,
 	baseWeeklyHours: Number(document.getElementById("baseWeeklyHours")?.value) || 0,
 	baseDailyPaidHours: Number(document.getElementById("baseDailyPaidHours")?.value) || 0,
 	standardShiftLength: Number(document.getElementById("standardShiftLength")?.value) || 0,
@@ -769,6 +790,7 @@ function editCompany(id) {
 
   // Pay mode first (so UI can react)
   setVal("payMode", c.payMode || "weekly");
+  setVal("companyPayCycle", c.payCycle || "weekly");
 
   // If you have UI logic to show/hide daily OT + bonus fields, call it here
   if (typeof updateCompanyFormVisibility === "function") {
@@ -864,7 +886,7 @@ function resetCompanyForm() {
   const seed = getCompanyFormSeedValues();
   const ids = [
     "companyId", "companyName", "companyBaseRate",
-    "payMode", "baseWeeklyHours", "dailyOTAfterWorkedHours", "minPaidShiftHours",
+    "payMode", "companyPayCycle", "baseWeeklyHours", "dailyOTAfterWorkedHours", "minPaidShiftHours",
     "companyDefaultStart", "companyDefaultFinish", "companyAnnualLeaveAllowance",
     "companyFourWeekCycleStart",
     "otWeekday", "otSaturday", "otSunday", "otBankHoliday",
@@ -880,6 +902,7 @@ function resetCompanyForm() {
   // sensible defaults
   if (document.getElementById("companyBaseRate")) document.getElementById("companyBaseRate").value = seed.baseRate;
   if (document.getElementById("payMode")) document.getElementById("payMode").value = "weekly";
+  if (document.getElementById("companyPayCycle")) document.getElementById("companyPayCycle").value = seed.payCycle;
   if (document.getElementById("baseWeeklyHours")) document.getElementById("baseWeeklyHours").value = seed.baseWeeklyHours;
   if (document.getElementById("dailyOTAfterWorkedHours")) document.getElementById("dailyOTAfterWorkedHours").value = 0;
   if (document.getElementById("minPaidShiftHours")) document.getElementById("minPaidShiftHours").value = 0;
@@ -2014,6 +2037,7 @@ function getSummaryFourWeekCycleStart() {
 function validateCompanyCycleStartDate(input) {
   const el = input || document.getElementById("companyFourWeekCycleStart");
   if (!el) return true;
+  if ((document.getElementById("companyPayCycle")?.value || "weekly") !== "four_week") return true;
   const value = String(el.value || "").trim();
   if (!value) return true;
   if (dateOnlyToDate(value).getDay() === 1) return true;
@@ -2291,10 +2315,12 @@ function toggleCompanySummary(companyId) {
 
 function updateCompanyFormVisibility() {
   const payModeEl = document.getElementById("payMode");
+  const payCycleEl = document.getElementById("companyPayCycle");
   const bonusTypeEl = document.getElementById("bonusType");
-  if (!payModeEl && !bonusTypeEl) return; // not on companies page
+  if (!payModeEl && !payCycleEl && !bonusTypeEl) return; // not on companies page
 
   const dailyOTRow = document.getElementById("dailyOtFields") || document.getElementById("dailyOTRow");
+  const fourWeekCycleWrap = document.getElementById("companyFourWeekCycleWrap");
   const bonusModeWrap = document.getElementById("bonusModeWrap");
   const bonusWindow = document.getElementById("bonusWindow");
   const bonusModeEl = document.getElementById("bonusMode");
@@ -2307,6 +2333,7 @@ function updateCompanyFormVisibility() {
   };
 
   setVisible(dailyOTRow, payModeEl?.value === "daily");
+  setVisible(fourWeekCycleWrap, payCycleEl?.value === "four_week");
 
   const bonusType = bonusTypeEl?.value || "none";
   const bonusMode = bonusModeEl?.value || "per_hour";
@@ -2322,7 +2349,7 @@ function updateCompanyFormVisibility() {
 }
 
 document.addEventListener("change", (e) => {
-  if (e.target?.id === "payMode" || e.target?.id === "bonusType" || e.target?.id === "bonusMode") {
+  if (e.target?.id === "payMode" || e.target?.id === "companyPayCycle" || e.target?.id === "bonusType" || e.target?.id === "bonusMode") {
     updateCompanyFormVisibility();
   }
 });
