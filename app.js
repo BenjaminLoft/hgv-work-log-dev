@@ -2642,8 +2642,10 @@ function renderSelectedShiftDateDetails(byDate) {
       <h2 style="margin-top:16px;">${escapeHtml(dateLabel)}</h2>
       <div class="shift-card">
         <div>No shifts stored for this date.</div>
-        <div style="margin-top:12px;">
+        <div style="margin-top:12px; display:flex; gap:10px; flex-wrap:wrap;">
           <button class="button-secondary" style="width:auto;" onclick="startNewShiftForDate('${escapeHtml(selected)}')">Add Shift For This Date</button>
+          <button class="button-secondary" style="width:auto;" onclick="quickAddCalendarDay('${escapeHtml(selected)}', 'annualLeave')">Add Annual Leave</button>
+          <button class="button-secondary" style="width:auto;" onclick="quickAddCalendarDay('${escapeHtml(selected)}', 'sickDay')">Add Sick Day</button>
         </div>
       </div>
     `;
@@ -2654,7 +2656,11 @@ function renderSelectedShiftDateDetails(byDate) {
     <div class="shift-day-details">
       <div style="margin-top:16px; display:flex; gap:10px; align-items:center; justify-content:space-between; flex-wrap:wrap;">
         <h2 style="margin:0;">${escapeHtml(dateLabel)}</h2>
-        <button class="button-secondary" style="width:auto;" onclick="startNewShiftForDate('${escapeHtml(selected)}')">Add Shift For This Date</button>
+        <div style="display:flex; gap:10px; flex-wrap:wrap;">
+          <button class="button-secondary" style="width:auto;" onclick="startNewShiftForDate('${escapeHtml(selected)}')">Add Shift For This Date</button>
+          <button class="button-secondary" style="width:auto;" onclick="quickAddCalendarDay('${escapeHtml(selected)}', 'annualLeave')">Add Annual Leave</button>
+          <button class="button-secondary" style="width:auto;" onclick="quickAddCalendarDay('${escapeHtml(selected)}', 'sickDay')">Add Sick Day</button>
+        </div>
       </div>
       ${entries.map(entry => formatShiftLine(entry.shift, entry.index)).join("")}
     </div>
@@ -2942,6 +2948,81 @@ function startNewShiftForDate(dateStr) {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return;
   localStorage.setItem("newShiftDate", value);
   window.location.href = "enter-shift.html";
+}
+
+function getDefaultCompanyForCalendarQuickAdd() {
+  ensureDefaultCompany();
+  const defaultId = getDefaultCompanyId();
+  return getCompanyById(defaultId) || getSelectableCompanies()[0] || companies[0] || null;
+}
+
+function quickAddCalendarDay(dateStr, kind) {
+  const date = String(dateStr || "").trim();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return;
+
+  const company = getDefaultCompanyForCalendarQuickAdd();
+  if (!company?.id) {
+    alert("Add a company first.");
+    return;
+  }
+
+  const isAnnualLeave = kind === "annualLeave";
+  const isSickDay = kind === "sickDay";
+  if (!isAnnualLeave && !isSickDay) return;
+
+  const duplicate = shifts.some(s =>
+    String(s.date || "") === date &&
+    String(s.companyId || "") === String(company.id) &&
+    !!s[isAnnualLeave ? "annualLeave" : "sickDay"]
+  );
+  if (duplicate) {
+    alert(isAnnualLeave ? "Annual leave is already recorded for this company on that date." : "A sick day is already recorded for this company on that date.");
+    return;
+  }
+
+  const leavePaidHours = Math.max(0, clamp0(company.standardShiftLength || 9) - 1);
+  const shift = normalizeShift({
+    id: generateShiftId(),
+    date,
+    companyId: company.id,
+    start: "",
+    finish: "",
+    shiftType: "day",
+    vehicleEntries: [],
+    trailer1: "",
+    trailer2: "",
+    defects: "",
+    notes: "",
+    annualLeave: isAnnualLeave,
+    sickDay: isSickDay,
+    bankHoliday: false,
+    dayOffInLieu: false,
+    expenses: { parking: 0, tolls: 0 },
+    nightOut: false,
+    nightOutCount: 0,
+    nightOutPay: 0,
+    overrides: {},
+    createdAt: Date.now()
+  });
+
+  const hrs = calculateHours("", "", shift.annualLeave, shift.sickDay, leavePaidHours);
+  shift.worked = hrs.worked;
+  shift.breaks = hrs.breaks;
+  shift.paid = hrs.paid;
+  applyCompanyPaidRules(shift);
+  const split = splitPaidIntoBaseAndOT_DailyWorked(shift);
+  shift.baseHours = split.baseHours;
+  shift.otHours = split.otHours;
+
+  shifts.push(shift);
+  saveAll();
+
+  shiftsPageState.monthValue = date.slice(0, 7);
+  shiftsPageState.selectedDate = date;
+  shiftsPageState.selectedShiftId = shift.id;
+  shiftsPageState.shouldFocusSelectedShift = true;
+  renderShiftsCalendarPage();
+  showShiftSaveBanner(isAnnualLeave ? "Annual Leave Added" : "Sick Day Added");
 }
 
 function startEditShift(index) {
