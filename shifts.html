@@ -30,20 +30,39 @@
 
 <div class="container">
 	<div class="screen">
-		<h2>All Shifts (Weekly View)</h2>
-		<div id="shiftList"></div>
+		<h2>All Shifts</h2>
+
+    <div class="calendar-controls">
+      <div class="segmented" role="tablist" aria-label="Shift view period">
+        <button id="shiftTabWeek" type="button" class="seg-btn is-active" role="tab" aria-selected="true" onclick="setShiftsCalendarTab('week')">Week</button>
+        <button id="shiftTabMonth" type="button" class="seg-btn" role="tab" aria-selected="false" onclick="setShiftsCalendarTab('month')">Month</button>
+      </div>
+
+      <div id="shiftWeekPickerWrap">
+        <label for="shiftWeekPicker">Select Week</label>
+        <input type="week" id="shiftWeekPicker">
+      </div>
+
+      <div id="shiftMonthPickerWrap" hidden>
+        <label for="shiftMonthPicker">Select Month</label>
+        <input type="month" id="shiftMonthPicker">
+      </div>
+    </div>
+
+    <div class="calendar-legend">
+      <span><i class="legend-dot day--work"></i> Work</span>
+      <span><i class="legend-dot day--sick"></i> Sick</span>
+      <span><i class="legend-dot day--leave"></i> Annual Leave</span>
+      <span><i class="legend-dot day--bank-holiday"></i> Bank Holiday</span>
+    </div>
+
+    <div id="shiftCalendar"></div>
+    <div id="shiftDayDetails"></div>
+		<div id="shiftList" hidden></div>
 	</div>
 </div>
 
 <script src="app.js"></script>
-<script>
-  if (typeof renderWeeklyGroupedShifts === "function") {
-    renderWeeklyGroupedShifts();
-  } else {
-    document.getElementById("shiftList").innerHTML =
-      "<div class='shift-card'>Weekly grouped shifts function is missing from app.js</div>";
-  }
-</script>
 
 </body>
 </html>

@@ -182,17 +182,6 @@
   btn.addEventListener("click", () => {
     wrap.style.display = (wrap.style.display === "none") ? "block" : "none";
   });
-
-  // Show/hide daily OT fields based on payMode
-  const payModeEl = document.getElementById("payMode");
-  const dailyWrap = document.getElementById("dailyOtFields");
-
-  function syncDailyFields(){
-    dailyWrap.style.display = (payModeEl.value === "daily") ? "block" : "none";
-  }
-
-  payModeEl.addEventListener("change", syncDailyFields);
-  syncDailyFields();
 </script>
 </body>
 </html>

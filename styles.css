@@ -224,9 +224,14 @@ input, select, textarea{
 
 /* iOS: date/time sometimes get "intrinsic" width */
 input[type="date"],
-input[type="time"]{
+input[type="time"],
+input[type="week"],
+input[type="month"]{
   -webkit-appearance: none;
   appearance: none;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
 }
 
 textarea{ min-height: 96px; resize: vertical; }
@@ -303,6 +308,15 @@ button:active{ transform: scale(0.99); }
 }
 .shift-card strong{ font-size: 14px; }
 .shift-card .meta{ color: var(--muted); font-size: 13px; margin-top: 6px; }
+.footer-version{
+  margin-top: 18px;
+  text-align: center;
+  color: var(--muted);
+  font-size: 12px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  padding: 12px 0 24px;
+}
 
 /* Weekly groups */
 .week-group{
@@ -376,6 +390,112 @@ button:active{ transform: scale(0.99); }
 }
 .details[open] > summary{
   margin-bottom: 10px;
+}
+
+/* Shifts calendar */
+.calendar-controls{
+  margin-top: 10px;
+}
+.calendar-controls input{
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+}
+
+.calendar-legend{
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 14px;
+  margin-top: 10px;
+  font-size: 12px;
+  color: var(--muted);
+}
+.legend-dot{
+  width: 10px;
+  height: 10px;
+  border-radius: 999px;
+  display: inline-block;
+  margin-right: 6px;
+  vertical-align: -1px;
+  border: 1px solid rgba(255,255,255,0.15);
+}
+
+.shift-calendar{
+  margin-top: 12px;
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 8px;
+}
+.shift-calendar-head{
+  text-align: center;
+  font-size: 11px;
+  color: var(--muted2);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-weight: 700;
+  padding: 4px 0;
+}
+.shift-day{
+  margin: 0;
+  width: 100%;
+  border-radius: 12px;
+  min-height: 62px;
+  padding: 8px;
+  text-align: left;
+  color: var(--text);
+  background: rgba(0,0,0,0.16);
+  border: 1px solid rgba(255,255,255,0.08);
+  box-shadow: none;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: 8px;
+}
+.shift-day-num{
+  font-weight: 800;
+  font-size: 14px;
+  line-height: 1;
+}
+.shift-day-meta{
+  font-size: 11px;
+  color: var(--muted);
+}
+.shift-day-details{
+  font-size: 15px;
+}
+.shift-day-details .shift-card strong{
+  font-size: 16px;
+}
+.shift-day-details .shift-card .meta{
+  font-size: 14px;
+  line-height: 1.5;
+}
+.shift-day.is-outside{
+  opacity: 0.5;
+}
+.shift-day.is-selected{
+  outline: 2px solid rgba(124,92,255,0.8);
+  border-color: rgba(124,92,255,0.8);
+}
+.shift-day.is-today{
+  border-color: rgba(35,198,183,0.8);
+}
+
+.day--work{
+  background: rgba(35,198,183,0.18);
+  border-color: rgba(35,198,183,0.32);
+}
+.day--sick{
+  background: rgba(255,77,109,0.20);
+  border-color: rgba(255,77,109,0.36);
+}
+.day--leave{
+  background: rgba(124,92,255,0.20);
+  border-color: rgba(124,92,255,0.36);
+}
+.day--bank-holiday{
+  background: rgba(255,181,92,0.20);
+  border-color: rgba(255,181,92,0.36);
 }
 
 /* Keep summary tiles in 2 columns on phones */
