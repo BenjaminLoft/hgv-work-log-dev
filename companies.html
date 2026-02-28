@@ -60,6 +60,21 @@
       <label>Minimum paid shift hours (optional)</label>
       <input type="number" step="0.25" id="minPaidShiftHours" placeholder="e.g. 8">
 
+      <h2>Defaults & Leave</h2>
+      <div class="grid">
+        <div>
+          <label>Default Start Time</label>
+          <input type="time" id="companyDefaultStart">
+        </div>
+        <div>
+          <label>Default Finish Time</label>
+          <input type="time" id="companyDefaultFinish">
+        </div>
+      </div>
+
+      <label>Annual Leave Allowance (days/year)</label>
+      <input type="number" step="1" min="0" id="companyAnnualLeaveAllowance" placeholder="e.g. 28">
+
       <h2>Bonus</h2>
 
       <label>Bonus Type</label>

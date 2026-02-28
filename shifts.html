@@ -33,17 +33,7 @@
 		<h2>All Shifts</h2>
 
     <div class="calendar-controls">
-      <div class="segmented" role="tablist" aria-label="Shift view period">
-        <button id="shiftTabWeek" type="button" class="seg-btn is-active" role="tab" aria-selected="true" onclick="setShiftsCalendarTab('week')">Week</button>
-        <button id="shiftTabMonth" type="button" class="seg-btn" role="tab" aria-selected="false" onclick="setShiftsCalendarTab('month')">Month</button>
-      </div>
-
-      <div id="shiftWeekPickerWrap">
-        <label for="shiftWeekPicker">Select Week</label>
-        <input type="week" id="shiftWeekPicker">
-      </div>
-
-      <div id="shiftMonthPickerWrap" hidden>
+      <div id="shiftMonthPickerWrap">
         <label for="shiftMonthPicker">Select Month</label>
         <input type="month" id="shiftMonthPicker">
       </div>
@@ -59,6 +49,13 @@
     <div id="shiftCalendar"></div>
     <div id="shiftDayDetails"></div>
 		<div id="shiftList" hidden></div>
+
+    <div class="section" style="margin-top:18px;">
+      <h2>Backup & Restore</h2>
+      <button class="button-secondary" onclick="downloadBackup()">Download Backup</button>
+      <label style="margin-top:12px;">Restore backup</label>
+      <input type="file" id="restoreFile" onchange="restoreBackup(event)">
+    </div>
 	</div>
 </div>
 

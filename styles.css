@@ -308,6 +308,10 @@ button:active{ transform: scale(0.99); }
 }
 .shift-card strong{ font-size: 14px; }
 .shift-card .meta{ color: var(--muted); font-size: 13px; margin-top: 6px; }
+.shift-card-selected{
+  border-color: rgba(124,92,255,0.78);
+  box-shadow: 0 0 0 2px rgba(124,92,255,0.18), var(--shadowB);
+}
 .footer-version{
   margin-top: 18px;
   text-align: center;
@@ -439,7 +443,7 @@ button:active{ transform: scale(0.99); }
   margin: 0;
   width: 100%;
   border-radius: 12px;
-  min-height: 62px;
+  min-height: 54px;
   padding: 8px;
   text-align: left;
   color: var(--text);
@@ -447,18 +451,13 @@ button:active{ transform: scale(0.99); }
   border: 1px solid rgba(255,255,255,0.08);
   box-shadow: none;
   display: flex;
-  flex-direction: column;
-  justify-content: space-between;
-  gap: 8px;
+  align-items: flex-start;
+  justify-content: flex-start;
 }
 .shift-day-num{
   font-weight: 800;
-  font-size: 14px;
+  font-size: 15px;
   line-height: 1;
-}
-.shift-day-meta{
-  font-size: 11px;
-  color: var(--muted);
 }
 .shift-day-details{
   font-size: 15px;

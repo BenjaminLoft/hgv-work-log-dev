@@ -7,7 +7,7 @@
    STORAGE
 ================================ */
 
-const DATA_MODEL_VERSION = 6;
+const DATA_MODEL_VERSION = 8;
 const DATA_VERSION_KEY = "dataVersion";
 const DEFAULT_SETTINGS = {
   defaultStart: "",
@@ -31,11 +31,12 @@ let settings = JSON.parse(localStorage.getItem("settings")) || { ...DEFAULT_SETT
 let editingIndex = null;
 let shiftsPageState = {
   initialized: false,
-  mode: "week",
-  weekValue: "",
   monthValue: "",
-  selectedDate: ""
+  selectedDate: "",
+  selectedShiftId: "",
+  shouldFocusSelectedShift: false
 };
+const SHIFT_CALENDAR_RETURN_KEY = "shiftCalendarReturnState";
 
 /* ===============================
    SAFE HELPERS
@@ -147,8 +148,9 @@ function toLegacyNightBonusFromRule(rule) {
   };
 }
 
-function normalizeCompany(src) {
+function normalizeCompany(src, fallbackSettings = {}) {
   const c = (src && typeof src === "object") ? src : {};
+  const fallback = normalizeSettings(fallbackSettings);
   const nightBonus = c.nightBonus || {};
   const rules = Array.isArray(c.bonusRules) ? c.bonusRules.map(normalizeBonusRule) : [];
   const activeRules = rules.filter(r => r.type !== "none");
@@ -174,6 +176,9 @@ function normalizeCompany(src) {
     baseWeeklyHours: Number(c.baseWeeklyHours || 0),
     baseDailyPaidHours: Number(c.baseDailyPaidHours || 0),
     standardShiftLength: Number(c.standardShiftLength || 0),
+    defaultStart: String(c.defaultStart ?? fallback.defaultStart ?? ""),
+    defaultFinish: String(c.defaultFinish ?? fallback.defaultFinish ?? ""),
+    annualLeaveAllowance: Number(c.annualLeaveAllowance ?? fallback.annualLeaveAllowance ?? 0),
     nightOutPay: Number(c.nightOutPay || 0),
     dailyOTAfterWorkedHours: Number(c.dailyOTAfterWorkedHours || 0),
     minPaidShiftHours: Number(c.minPaidShiftHours || 0),
@@ -197,6 +202,20 @@ function normalizeShift(src) {
   const expenses = s.expenses || {};
   const nightOutCountRaw = Number(s.nightOutCount || 0);
   const nightOutPayRaw = Number(s.nightOutPay || 0);
+  const rawOverrides = (s.overrides && typeof s.overrides === "object") ? s.overrides : {};
+  const normalizedOverrides = {};
+
+  const copyNumericOverride = (key) => {
+    const value = rawOverrides[key];
+    if (value === "" || value === null || value === undefined) return;
+    const num = Number(value);
+    if (Number.isFinite(num)) normalizedOverrides[key] = num;
+  };
+
+  ["baseRate", "breakHours", "otWeekday", "otSaturday", "otSunday", "otBankHoliday", "dailyOTAfterWorkedHours", "minPaidShiftHours"].forEach(copyNumericOverride);
+  if (rawOverrides.payMode === "daily" || rawOverrides.payMode === "weekly") {
+    normalizedOverrides.payMode = rawOverrides.payMode;
+  }
 
   return {
     ...s,
@@ -213,6 +232,7 @@ function normalizeShift(src) {
     annualLeave: !!s.annualLeave,
     sickDay: !!s.sickDay,
     bankHoliday: !!s.bankHoliday,
+    dayOffInLieu: !!(s.dayOffInLieu || s.toilDay || s.dayInLieu),
     startMileage: Number(s.startMileage || 0),
     finishMileage: Number(s.finishMileage || 0),
     mileage: Number(s.mileage || Math.max(0, Number(s.finishMileage || 0) - Number(s.startMileage || 0))),
@@ -223,7 +243,8 @@ function normalizeShift(src) {
     },
     nightOut: !!(s.nightOut || nightOutCountRaw > 0 || nightOutPayRaw > 0),
     nightOutCount: Math.max(0, nightOutCountRaw),
-    nightOutPay: Math.max(0, nightOutPayRaw)
+    nightOutPay: Math.max(0, nightOutPayRaw),
+    overrides: normalizedOverrides
   };
 }
 
@@ -234,10 +255,10 @@ function migrateData(sourceVersion = getStoredDataVersion()) {
   if (!Array.isArray(companies)) companies = [];
   if (!settings || typeof settings !== "object") settings = {};
 
+  settings = normalizeSettings(settings);
   shifts = shifts.map(normalizeShift);
   vehicles = normalizeVehicles(vehicles);
-  companies = companies.map(normalizeCompany);
-  settings = normalizeSettings(settings);
+  companies = companies.map(c => normalizeCompany(c, settings));
 
   if (from < DATA_MODEL_VERSION) {
     console.info(`Migrated data model: v${from} -> v${DATA_MODEL_VERSION}`);
@@ -333,6 +354,9 @@ function ensureDefaultCompany() {
     baseWeeklyHours: settings.baseHours ?? 45,
     dailyOTAfterWorkedHours: 0,        // used only if payMode="daily"
     minPaidShiftHours: 0,              // agency minimum paid
+    defaultStart: settings.defaultStart ?? "",
+    defaultFinish: settings.defaultFinish ?? "",
+    annualLeaveAllowance: settings.annualLeaveAllowance ?? 0,
     nightBonus: {
       mode: "none",                    // "none" | "per_hour" | "per_shift" | "per_week"
       amount: 0.50,
@@ -357,6 +381,26 @@ function ensureDefaultCompany() {
   }];
 
   saveAll();
+}
+
+function getCompanyFormSeedValues() {
+  ensureDefaultCompany();
+
+  const preferredId = getDefaultCompanyId();
+  const preferred = getCompanyById(preferredId);
+  const source = preferred || companies[0] || null;
+
+  return {
+    baseRate: Number(source?.baseRate || 0),
+    baseWeeklyHours: Number(source?.baseWeeklyHours || 0),
+    defaultStart: String(source?.defaultStart || ""),
+    defaultFinish: String(source?.defaultFinish || ""),
+    annualLeaveAllowance: Number(source?.annualLeaveAllowance || 0),
+    otWeekday: Number(source?.ot?.weekday || 1),
+    otSaturday: Number(source?.ot?.saturday || 1),
+    otSunday: Number(source?.ot?.sunday || 1),
+    otBankHoliday: Number(source?.ot?.bankHoliday || 1)
+  };
 }
 
 function getUserCompanies() {
@@ -526,6 +570,8 @@ function renderCompanies() {
           Rate: £${Number(c.baseRate || 0).toFixed(2)}<br>
 		  ${c.baseDailyPaidHours ? `Base daily paid (salaried): ${Number(c.baseDailyPaidHours || 0).toFixed(2)} hrs<br>` : ""}
 		  ${c.standardShiftLength ? `Std shift length: ${Number(c.standardShiftLength || 0).toFixed(2)} hrs<br>` : ""}
+          ${(c.defaultStart || c.defaultFinish) ? `Defaults: ${escapeHtml(c.defaultStart || "--:--")} - ${escapeHtml(c.defaultFinish || "--:--")}<br>` : ""}
+          Leave allowance: ${Number(c.annualLeaveAllowance || 0).toFixed(0)} days<br>
           Night out pay: £${Number(c.nightOutPay || 0).toFixed(2)}<br>
           Weekly base: ${Number(c.baseWeeklyHours || 0).toFixed(2)} hrs<br>
           ${(c.payMode === "daily")
@@ -609,6 +655,9 @@ function addOrUpdateCompany() {
 	baseWeeklyHours: Number(document.getElementById("baseWeeklyHours")?.value) || 0,
 	baseDailyPaidHours: Number(document.getElementById("baseDailyPaidHours")?.value) || 0,
 	standardShiftLength: Number(document.getElementById("standardShiftLength")?.value) || 0,
+	defaultStart: document.getElementById("companyDefaultStart")?.value || "",
+	defaultFinish: document.getElementById("companyDefaultFinish")?.value || "",
+	annualLeaveAllowance: Number(document.getElementById("companyAnnualLeaveAllowance")?.value) || 0,
 	nightOutPay: Number(document.getElementById("companyNightOutPay")?.value) || 0,
 	dailyOTAfterWorkedHours: Number(document.getElementById("dailyOTAfterWorkedHours")?.value) || 0,
 	minPaidShiftHours: Number(document.getElementById("minPaidShiftHours")?.value) || 0,
@@ -686,6 +735,9 @@ function editCompany(id) {
 
   setVal("dailyOTAfterWorkedHours", c.dailyOTAfterWorkedHours);
   setVal("minPaidShiftHours", c.minPaidShiftHours);
+  setVal("companyDefaultStart", c.defaultStart);
+  setVal("companyDefaultFinish", c.defaultFinish);
+  setVal("companyAnnualLeaveAllowance", c.annualLeaveAllowance);
 
   // Bonus
   const bonus = getPrimaryBonusRule(c);
@@ -762,9 +814,11 @@ function deleteCompany(id) {
 }
 
 function resetCompanyForm() {
+  const seed = getCompanyFormSeedValues();
   const ids = [
     "companyId", "companyName", "companyBaseRate",
     "payMode", "baseWeeklyHours", "dailyOTAfterWorkedHours", "minPaidShiftHours",
+    "companyDefaultStart", "companyDefaultFinish", "companyAnnualLeaveAllowance",
     "otWeekday", "otSaturday", "otSunday", "otBankHoliday",
     "companyNightOutPay",
     "bonusType", "bonusMode", "bonusAmount", "bonusStart", "bonusEnd",
@@ -776,19 +830,22 @@ function resetCompanyForm() {
   });
 
   // sensible defaults
-  if (document.getElementById("companyBaseRate")) document.getElementById("companyBaseRate").value = settings.baseRate ?? 17.75;
+  if (document.getElementById("companyBaseRate")) document.getElementById("companyBaseRate").value = seed.baseRate;
   if (document.getElementById("payMode")) document.getElementById("payMode").value = "weekly";
-  if (document.getElementById("baseWeeklyHours")) document.getElementById("baseWeeklyHours").value = settings.baseHours ?? 45;
+  if (document.getElementById("baseWeeklyHours")) document.getElementById("baseWeeklyHours").value = seed.baseWeeklyHours;
   if (document.getElementById("dailyOTAfterWorkedHours")) document.getElementById("dailyOTAfterWorkedHours").value = 0;
   if (document.getElementById("minPaidShiftHours")) document.getElementById("minPaidShiftHours").value = 0;
   if (document.getElementById("baseDailyPaidHours")) document.getElementById("baseDailyPaidHours").value = 0;
   if (document.getElementById("standardShiftLength")) document.getElementById("standardShiftLength").value = 0;
+  if (document.getElementById("companyDefaultStart")) document.getElementById("companyDefaultStart").value = seed.defaultStart;
+  if (document.getElementById("companyDefaultFinish")) document.getElementById("companyDefaultFinish").value = seed.defaultFinish;
+  if (document.getElementById("companyAnnualLeaveAllowance")) document.getElementById("companyAnnualLeaveAllowance").value = seed.annualLeaveAllowance;
   if (document.getElementById("companyNightOutPay")) document.getElementById("companyNightOutPay").value = 0;
 
-  if (document.getElementById("otWeekday")) document.getElementById("otWeekday").value = settings.otWeekday ?? 1.25;
-  if (document.getElementById("otSaturday")) document.getElementById("otSaturday").value = settings.otSaturday ?? 1.25;
-  if (document.getElementById("otSunday")) document.getElementById("otSunday").value = settings.otSunday ?? 1.5;
-  if (document.getElementById("otBankHoliday")) document.getElementById("otBankHoliday").value = settings.otBankHoliday ?? 2;
+  if (document.getElementById("otWeekday")) document.getElementById("otWeekday").value = seed.otWeekday;
+  if (document.getElementById("otSaturday")) document.getElementById("otSaturday").value = seed.otSaturday;
+  if (document.getElementById("otSunday")) document.getElementById("otSunday").value = seed.otSunday;
+  if (document.getElementById("otBankHoliday")) document.getElementById("otBankHoliday").value = seed.otBankHoliday;
 
   if (document.getElementById("bonusType")) document.getElementById("bonusType").value = "none";
   if (document.getElementById("bonusMode")) document.getElementById("bonusMode").value = "per_hour";
@@ -802,39 +859,6 @@ function resetCompanyForm() {
   renderCompanyVehicleChecklist([]);
   
   updateCompanyFormVisibility();
-}
-
-/* ===============================
-   SETTINGS PAGE
-================================ */
-
-function loadSettings() {
-  if (!document.getElementById("baseRate")) return;
-
-  document.getElementById("defaultStart").value = settings.defaultStart;
-  document.getElementById("defaultFinish").value = settings.defaultFinish || "";
-  document.getElementById("baseRate").value = settings.baseRate;
-  document.getElementById("baseHours").value = settings.baseHours;
-  document.getElementById("otWeekday").value = settings.otWeekday;
-  document.getElementById("otSaturday").value = settings.otSaturday;
-  document.getElementById("otSunday").value = settings.otSunday;
-  document.getElementById("otBankHoliday").value = settings.otBankHoliday;
-  document.getElementById("annualLeaveAllowance").value = settings.annualLeaveAllowance || 0;
-}
-
-function saveSettings() {
-  settings.defaultStart = document.getElementById("defaultStart")?.value || "";
-  settings.defaultFinish = document.getElementById("defaultFinish")?.value || "";
-  settings.baseRate = Number(document.getElementById("baseRate")?.value) || 0;
-  settings.baseHours = Number(document.getElementById("baseHours")?.value) || 0;
-  settings.otWeekday = Number(document.getElementById("otWeekday")?.value) || 1;
-  settings.otSaturday = Number(document.getElementById("otSaturday")?.value) || 1;
-  settings.otSunday = Number(document.getElementById("otSunday")?.value) || 1;
-  settings.otBankHoliday = Number(document.getElementById("otBankHoliday")?.value) || 1;
-  settings.annualLeaveAllowance = Number(document.getElementById("annualLeaveAllowance")?.value) || 0;
-
-  saveAll();
-  alert("Settings saved");
 }
 
 /* ===============================
@@ -972,10 +996,19 @@ function initVehicleCombobox() {
   if (companyEl) {
     companyEl.addEventListener("change", () => {
       applyCompanyShiftEntryVisibility(companyEl.value);
+      applyDefaultsToShiftEntry();
       renderVehicleMenuOptions(input.value);
       initNightOutBehavior();
     });
   }
+}
+
+function getCompanyShiftEntryDefaults(companyId) {
+  const company = getCompanyById(companyId);
+  return {
+    defaultStart: String(company?.defaultStart || ""),
+    defaultFinish: String(company?.defaultFinish || "")
+  };
 }
 
 /* ===============================
@@ -1113,13 +1146,16 @@ function applyDefaultsToShiftEntry({ force = false } = {}) {
 
   if (!force && editingIndex !== null) return;
 
-  if ((force || !startEl.value) && settings?.defaultStart) {
-    startEl.value = settings.defaultStart;
+  const companyId = document.getElementById("company")?.value || "";
+  const defaults = getCompanyShiftEntryDefaults(companyId);
+
+  if ((force || !startEl.value) && defaults.defaultStart) {
+    startEl.value = defaults.defaultStart;
   }
 
   const finishEl = document.getElementById("finish");
-  if (finishEl && (force || !finishEl.value) && settings?.defaultFinish) {
-    finishEl.value = settings.defaultFinish;
+  if (finishEl && (force || !finishEl.value) && defaults.defaultFinish) {
+    finishEl.value = defaults.defaultFinish;
   }
 
   const dateEl = document.getElementById("date");
@@ -1218,13 +1254,20 @@ function initMileageBehavior() {
 function initLeaveCheckboxBehavior() {
   const annualLeaveEl = document.getElementById("annualLeave");
   const sickDayEl = document.getElementById("sickDay");
+  const lieuEl = document.getElementById("dayOffInLieu");
   if (!annualLeaveEl || !sickDayEl) return;
 
   annualLeaveEl.addEventListener("change", () => {
-    if (annualLeaveEl.checked) sickDayEl.checked = false;
+    if (annualLeaveEl.checked) {
+      sickDayEl.checked = false;
+      if (lieuEl) lieuEl.checked = false;
+    }
   });
   sickDayEl.addEventListener("change", () => {
-    if (sickDayEl.checked) annualLeaveEl.checked = false;
+    if (sickDayEl.checked) {
+      annualLeaveEl.checked = false;
+      if (lieuEl) lieuEl.checked = false;
+    }
   });
 }
 
@@ -1237,6 +1280,36 @@ function initNightOutBehavior() {
   const c = getCompanyById(companyId);
   const rate = Number(c?.nightOutPay || 0);
   infoEl.textContent = `Night Out Pay Rate (from company): £${rate.toFixed(2)} per night out.`;
+}
+
+function getOptionalNumberInputValue(id) {
+  const raw = String(document.getElementById(id)?.value || "").trim();
+  if (raw === "") return null;
+  const value = Number(raw);
+  return Number.isFinite(value) ? value : null;
+}
+
+function buildShiftOverrides(existingOverrides = {}) {
+  const overrides = { ...(existingOverrides && typeof existingOverrides === "object" ? existingOverrides : {}) };
+  const formOverrideMap = {
+    overrideBaseRate: "baseRate",
+    overrideBreakHours: "breakHours",
+    overrideOtWeekday: "otWeekday",
+    overrideOtSaturday: "otSaturday",
+    overrideOtSunday: "otSunday",
+    overrideOtBankHoliday: "otBankHoliday"
+  };
+
+  Object.entries(formOverrideMap).forEach(([inputId, key]) => {
+    const value = getOptionalNumberInputValue(inputId);
+    if (value === null) {
+      delete overrides[key];
+    } else {
+      overrides[key] = value;
+    }
+  });
+
+  return overrides;
 }
 
 /* ===============================
@@ -1269,6 +1342,7 @@ function addOrUpdateShift() {
   const shiftType = document.getElementById("shiftType")?.value || "day";
   const isAnnualLeave = !!document.getElementById("annualLeave")?.checked;
   const isSickDay = !!document.getElementById("sickDay")?.checked;
+  const hasDayOffInLieu = !!document.getElementById("dayOffInLieu")?.checked;
   const isNightOut = !!document.getElementById("nightOut")?.checked;
   const startMileage = showMileage ? Number(document.getElementById("startMileage")?.value || 0) : 0;
   const finishMileage = showMileage ? Number(document.getElementById("finishMileage")?.value || 0) : 0;
@@ -1282,11 +1356,16 @@ function addOrUpdateShift() {
   if (isAnnualLeave && isSickDay) {
     return alert("A shift can't be both Annual Leave and Sick Day.");
   }
+  if ((isAnnualLeave || isSickDay) && hasDayOffInLieu) {
+    return alert("Day off in lieu can only be added to worked shifts.");
+  }
 
   if (vehicle && !vehicles.includes(vehicle)) {
     vehicles.push(vehicle);
   }
   if (vehicle) ensureVehicleAssignedToCompany(companyId, vehicle);
+  const existingOverrides = (editingIndex !== null && shifts[editingIndex]?.overrides) ? shifts[editingIndex].overrides : {};
+  const overrides = buildShiftOverrides(existingOverrides);
 
   const shift = {
     id: (editingIndex !== null && shifts[editingIndex]?.id) ? shifts[editingIndex].id : generateShiftId(),
@@ -1307,6 +1386,7 @@ function addOrUpdateShift() {
     annualLeave: isAnnualLeave,
     sickDay: isSickDay,
     bankHoliday: !!document.getElementById("bankHoliday")?.checked,
+    dayOffInLieu: hasDayOffInLieu,
     expenses: {
       parking: Math.max(0, expenseParking),
       tolls: Math.max(0, expenseTolls)
@@ -1314,6 +1394,7 @@ function addOrUpdateShift() {
     nightOut: isNightOut,
     nightOutCount: isNightOut ? 1 : 0,
     nightOutPay: Math.max(0, nightOutPay),
+    overrides,
 
     createdAt:
       (editingIndex !== null && shifts[editingIndex]?.createdAt)
@@ -1326,6 +1407,10 @@ function addOrUpdateShift() {
   shift.worked = hrs.worked;
   shift.breaks = hrs.breaks;
   shift.paid = hrs.paid;
+  if (!shift.annualLeave && !shift.sickDay && Number.isFinite(shift.overrides?.breakHours)) {
+    shift.breaks = Math.max(0, Number(shift.overrides.breakHours || 0));
+    shift.paid = Math.max(0, Number(shift.worked || 0) - shift.breaks);
+  }
 
   // Apply company rules (min paid, etc.)
   applyCompanyPaidRules(shift);
@@ -1335,7 +1420,9 @@ function addOrUpdateShift() {
   shift.baseHours = split.baseHours;
   shift.otHours = split.otHours;
 
-  if (editingIndex !== null) {
+  const wasEditing = editingIndex !== null;
+
+  if (wasEditing) {
     shifts[editingIndex] = shift;
     editingIndex = null;
   } else {
@@ -1343,8 +1430,13 @@ function addOrUpdateShift() {
   }
 
   saveAll();
-  clearForm();
-  renderAll();
+  localStorage.setItem(SHIFT_CALENDAR_RETURN_KEY, JSON.stringify({
+    action: wasEditing ? "updated" : "added",
+    shiftId: shift.id,
+    date: shift.date,
+    monthValue: shift.date.slice(0, 7)
+  }));
+  window.location.href = "shifts.html";
 }
 
 function clearForm() {
@@ -1377,13 +1469,13 @@ function clearForm() {
 function getShiftRateProfile(shift) {
   const c = getCompanyById(shift.companyId);
 
-  const baseRate = Number(shift.overrides?.baseRate ?? c?.baseRate ?? settings.baseRate ?? 0);
+  const baseRate = Number(shift.overrides?.baseRate ?? c?.baseRate ?? 0);
 
   const ot = {
-    weekday: Number(shift.overrides?.otWeekday ?? c?.ot?.weekday ?? settings.otWeekday ?? 1),
-    saturday: Number(shift.overrides?.otSaturday ?? c?.ot?.saturday ?? settings.otSaturday ?? 1),
-    sunday: Number(shift.overrides?.otSunday ?? c?.ot?.sunday ?? settings.otSunday ?? 1),
-    bankHoliday: Number(shift.overrides?.otBankHoliday ?? c?.ot?.bankHoliday ?? settings.otBankHoliday ?? 1)
+    weekday: Number(shift.overrides?.otWeekday ?? c?.ot?.weekday ?? 1),
+    saturday: Number(shift.overrides?.otSaturday ?? c?.ot?.saturday ?? 1),
+    sunday: Number(shift.overrides?.otSunday ?? c?.ot?.sunday ?? 1),
+    bankHoliday: Number(shift.overrides?.otBankHoliday ?? c?.ot?.bankHoliday ?? 1)
   };
 
   return { baseRate, ot };
@@ -1405,7 +1497,7 @@ function getCompanyPayMode(companyId) {
 
 function getCompanyWeeklyBaseHours(companyId) {
   const c = getCompanyById(companyId);
-  return Number(c?.baseWeeklyHours ?? settings.baseHours ?? 0);
+  return Number(c?.baseWeeklyHours ?? 0);
 }
 
 function calcBonusForShift(shift, company, weekPaidSet, perWeekKey = "") {
@@ -1486,7 +1578,7 @@ function processMonthAsWeeks(monthShifts, modeForWeek = "overall") {
 
 /**
  * mode:
- *  - "overall": weekly OT threshold applies to ALL weekly-mode companies combined (daily-mode stays daily)
+ *  - "overall": aggregate all companies, but weekly OT thresholds still apply per company
  *  - "perCompany": weekly OT threshold applies per company (weekly-mode only)
  *  - "monthOverall": no weekly allocation (daily-mode still uses split; weekly-mode treated as base, BH as OT)
  */
@@ -1647,24 +1739,28 @@ function processShifts(group, mode = "overall") {
         }
       });
     } else {
-      // overall weekly threshold uses settings.baseHours
-      let remainingBase = Number(settings.baseHours ?? 0);
+      const remainingByCompany = {};
 
       weeklyCandidates.forEach(s => {
+        if (!(s.companyId in remainingByCompany)) {
+          remainingByCompany[s.companyId] = getCompanyWeeklyBaseHours(s.companyId);
+        }
+
         const profile = getShiftRateProfile(s);
         const mult = getShiftOTMultiplier(s, profile);
         const paid = Number(s.paid || 0);
+        let remaining = remainingByCompany[s.companyId];
 
-        if (remainingBase > 0) {
-          if (paid <= remainingBase) {
+        if (remaining > 0) {
+          if (paid <= remaining) {
             basePay += paid * profile.baseRate;
-            remainingBase -= paid;
+            remainingByCompany[s.companyId] = remaining - paid;
           } else {
-            basePay += remainingBase * profile.baseRate;
-            const ot = paid - remainingBase;
+            basePay += remaining * profile.baseRate;
+            const ot = paid - remaining;
             otPay += ot * profile.baseRate * mult;
             totalOTHours += ot;
-            remainingBase = 0;
+            remainingByCompany[s.companyId] = 0;
           }
         } else {
           otPay += paid * profile.baseRate * mult;
@@ -1837,27 +1933,37 @@ function renderCurrentPeriodTiles() {
   // Index page: append annual leave taken/remaining under This Month tiles.
   if (!isSummaryPage && monthTiles) {
     const stats = getYearlyLeaveStats(new Date().getFullYear());
-    const remaining = Number(stats.remaining || 0);
-    const remainingText = remaining >= 0
-      ? `${remaining.toFixed(0)} days`
-      : `-${Math.abs(remaining).toFixed(0)} days`;
+    const remainingText = getLeaveBalanceText(stats.remaining);
 
     monthTiles.insertAdjacentHTML("beforeend", `
+      <div class="tile"><div class="label">Leave Allowance</div><div class="value">${Number(stats.allowance || 0).toFixed(0)} days</div></div>
+      <div class="tile"><div class="label">Lieu Earned</div><div class="value">${Number(stats.lieuDaysEarned || 0).toFixed(0)} days</div></div>
       <div class="tile"><div class="label">Leave Taken</div><div class="value">${Number(stats.annualLeaveTaken || 0).toFixed(0)} days</div></div>
-      <div class="tile"><div class="label">Leave Remaining</div><div class="value">${remainingText}</div></div>
+      <div class="tile"><div class="label">Leave Balance</div><div class="value">${remainingText}</div></div>
     `);
   }
 }
 
 function getYearlyLeaveStats(year = new Date().getFullYear()) {
+  ensureDefaultCompany();
   const y = Number(year || new Date().getFullYear());
   const inYear = shifts.filter(s => Number((s.date || "").slice(0, 4)) === y);
   const annualLeaveTaken = inYear.filter(s => !!s.annualLeave).length;
   const sickDaysTaken = inYear.filter(s => !!s.sickDay).length;
-  const allowance = Number(settings.annualLeaveAllowance || 0);
-  const remaining = allowance - annualLeaveTaken;
+  const lieuDaysEarned = inYear.filter(s => !!s.dayOffInLieu).length;
+  const allowance = getSelectableCompanies()
+    .reduce((sum, company) => sum + Number(company?.annualLeaveAllowance || 0), 0);
+  const available = allowance + lieuDaysEarned;
+  const remaining = available - annualLeaveTaken;
 
-  return { year: y, annualLeaveTaken, sickDaysTaken, allowance, remaining };
+  return { year: y, annualLeaveTaken, sickDaysTaken, lieuDaysEarned, allowance, available, remaining };
+}
+
+function getLeaveBalanceText(balance) {
+  const value = Number(balance || 0);
+  return value >= 0
+    ? `${value.toFixed(0)} days remaining`
+    : `${Math.abs(value).toFixed(0)} days over allowance`;
 }
 
 function renderLeaveStats() {
@@ -1865,14 +1971,14 @@ function renderLeaveStats() {
   if (!el) return;
 
   const stats = getYearlyLeaveStats(new Date().getFullYear());
-  const remText = stats.remaining >= 0
-    ? `${stats.remaining} days remaining`
-    : `${Math.abs(stats.remaining)} days over allowance`;
+  const remText = getLeaveBalanceText(stats.remaining);
 
   el.innerHTML = `
     <div class="grid">
       <div class="tile"><div class="label">Year</div><div class="value">${stats.year}</div></div>
       <div class="tile"><div class="label">Annual Leave Allowance</div><div class="value">${Number(stats.allowance).toFixed(0)} days</div></div>
+      <div class="tile"><div class="label">Lieu Days Earned</div><div class="value">${Number(stats.lieuDaysEarned || 0).toFixed(0)} days</div></div>
+      <div class="tile"><div class="label">Leave Available</div><div class="value">${Number(stats.available || 0).toFixed(0)} days</div></div>
       <div class="tile"><div class="label">Annual Leave Taken</div><div class="value">${Number(stats.annualLeaveTaken).toFixed(0)} days</div></div>
       <div class="tile"><div class="label">Annual Leave Balance</div><div class="value">${escapeHtml(remText)}</div></div>
       <div class="tile"><div class="label">Sick Days Taken</div><div class="value">${Number(stats.sickDaysTaken).toFixed(0)} days</div></div>
@@ -2129,31 +2235,6 @@ function toDateKey(dateObj) {
   return `${y}-${m}-${d}`;
 }
 
-function getIsoWeekValue(dateObj) {
-  const d = new Date(Date.UTC(dateObj.getFullYear(), dateObj.getMonth(), dateObj.getDate()));
-  d.setUTCDate(d.getUTCDate() + 4 - (d.getUTCDay() || 7));
-  const yearStart = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
-  const weekNo = Math.ceil((((d - yearStart) / 86400000) + 1) / 7);
-  return `${d.getUTCFullYear()}-W${String(weekNo).padStart(2, "0")}`;
-}
-
-function getMondayFromIsoWeekValue(weekValue) {
-  const m = /^(\d{4})-W(\d{2})$/.exec(String(weekValue || ""));
-  if (!m) return null;
-  const year = Number(m[1]);
-  const week = Number(m[2]);
-  if (!Number.isFinite(year) || !Number.isFinite(week) || week < 1 || week > 53) return null;
-
-  const jan4 = new Date(Date.UTC(year, 0, 4));
-  const jan4Dow = jan4.getUTCDay() || 7; // 1..7
-  const week1Monday = new Date(jan4);
-  week1Monday.setUTCDate(jan4.getUTCDate() - jan4Dow + 1);
-
-  const monday = new Date(week1Monday);
-  monday.setUTCDate(week1Monday.getUTCDate() + ((week - 1) * 7));
-  return new Date(monday.getUTCFullYear(), monday.getUTCMonth(), monday.getUTCDate());
-}
-
 function buildShiftDateMap() {
   const byDate = new Map();
   shifts.forEach((s, idx) => {
@@ -2178,31 +2259,9 @@ function getDayStatusClass(entries) {
   return "day--work";
 }
 
-function getDayMetaText(entries) {
-  const list = Array.isArray(entries) ? entries.map(e => e.shift || e) : [];
-  if (!list.length) return "";
-  if (list.some(s => s.sickDay)) return "Sick";
-  if (list.some(s => s.annualLeave)) return "Leave";
-  if (list.some(s => s.bankHoliday)) return "Bank Hol";
-  const paid = list.reduce((sum, s) => sum + Number(s.paid || 0), 0);
-  return `${paid.toFixed(1)}h`;
-}
-
 function syncShiftsPagePickers() {
-  const weekEl = document.getElementById("shiftWeekPicker");
   const monthEl = document.getElementById("shiftMonthPicker");
-  if (weekEl) weekEl.value = shiftsPageState.weekValue;
   if (monthEl) monthEl.value = shiftsPageState.monthValue;
-}
-
-function getFirstShiftDateInWeek(byDate, weekValue) {
-  const monday = getMondayFromIsoWeekValue(weekValue);
-  if (!monday) return "";
-  for (let i = 0; i < 7; i += 1) {
-    const key = toDateKey(addDays(monday, i));
-    if ((byDate.get(key) || []).length) return key;
-  }
-  return toDateKey(monday);
 }
 
 function getFirstShiftDateInMonth(byDate, monthValue) {
@@ -2216,71 +2275,33 @@ function getFirstShiftDateInMonth(byDate, monthValue) {
   return toDateKey(monthStart);
 }
 
-function setShiftsPageMode(mode) {
-  shiftsPageState.mode = (mode === "month") ? "month" : "week";
-  const weekBtn = document.getElementById("shiftTabWeek");
-  const monthBtn = document.getElementById("shiftTabMonth");
-  const weekWrap = document.getElementById("shiftWeekPickerWrap");
-  const monthWrap = document.getElementById("shiftMonthPickerWrap");
-
-  if (weekBtn) {
-    weekBtn.classList.toggle("is-active", shiftsPageState.mode === "week");
-    weekBtn.setAttribute("aria-selected", shiftsPageState.mode === "week" ? "true" : "false");
-  }
-  if (monthBtn) {
-    monthBtn.classList.toggle("is-active", shiftsPageState.mode === "month");
-    monthBtn.setAttribute("aria-selected", shiftsPageState.mode === "month" ? "true" : "false");
-  }
-  if (weekWrap) weekWrap.hidden = shiftsPageState.mode !== "week";
-  if (monthWrap) monthWrap.hidden = shiftsPageState.mode !== "month";
-}
-
-function setShiftsCalendarTab(mode) {
-  setShiftsPageMode(mode);
-  const byDate = buildShiftDateMap();
-  if (shiftsPageState.mode === "month") {
-    shiftsPageState.selectedDate = getFirstShiftDateInMonth(byDate, shiftsPageState.monthValue);
-    shiftsPageState.weekValue = getIsoWeekValue(dateOnlyToDate(shiftsPageState.selectedDate));
-  } else {
-    shiftsPageState.selectedDate = getFirstShiftDateInWeek(byDate, shiftsPageState.weekValue);
-    shiftsPageState.monthValue = shiftsPageState.selectedDate.slice(0, 7);
-  }
-  renderShiftsCalendarPage();
-}
-
 function initShiftsCalendarPageControls() {
   const calendarEl = document.getElementById("shiftCalendar");
   if (!calendarEl || shiftsPageState.initialized) return;
 
   const today = new Date();
   const todayKey = toDateKey(today);
+  const savedReturn = loadShiftCalendarReturnState();
   shiftsPageState.selectedDate = shiftsPageState.selectedDate || todayKey;
   shiftsPageState.monthValue = shiftsPageState.monthValue || todayKey.slice(0, 7);
-  shiftsPageState.weekValue = shiftsPageState.weekValue || getIsoWeekValue(today);
-  shiftsPageState.mode = (shiftsPageState.mode === "month") ? "month" : "week";
-
-  const weekEl = document.getElementById("shiftWeekPicker");
+  if (savedReturn) {
+    shiftsPageState.monthValue = savedReturn.monthValue;
+    shiftsPageState.selectedDate = savedReturn.date;
+    shiftsPageState.selectedShiftId = savedReturn.shiftId;
+    shiftsPageState.shouldFocusSelectedShift = !!savedReturn.shiftId;
+    showShiftSaveBanner(savedReturn.action === "updated" ? "Shift Updated" : "Shift Added");
+  }
   const monthEl = document.getElementById("shiftMonthPicker");
 
-  if (weekEl) {
-    weekEl.addEventListener("change", () => {
-      const monday = getMondayFromIsoWeekValue(weekEl.value);
-      if (!monday) return;
-      shiftsPageState.weekValue = weekEl.value;
-      const byDate = buildShiftDateMap();
-      shiftsPageState.selectedDate = getFirstShiftDateInWeek(byDate, shiftsPageState.weekValue);
-      shiftsPageState.monthValue = toDateKey(monday).slice(0, 7);
-      renderShiftsCalendarPage();
-    });
-  }
   if (monthEl) {
     monthEl.addEventListener("change", () => {
       const monthVal = String(monthEl.value || "");
       if (!/^\d{4}-\d{2}$/.test(monthVal)) return;
       shiftsPageState.monthValue = monthVal;
+      shiftsPageState.selectedShiftId = "";
+      shiftsPageState.shouldFocusSelectedShift = false;
       const byDate = buildShiftDateMap();
       shiftsPageState.selectedDate = getFirstShiftDateInMonth(byDate, shiftsPageState.monthValue);
-      shiftsPageState.weekValue = getIsoWeekValue(dateOnlyToDate(shiftsPageState.selectedDate));
       renderShiftsCalendarPage();
     });
   }
@@ -2288,11 +2309,66 @@ function initShiftsCalendarPageControls() {
   shiftsPageState.initialized = true;
 }
 
+function loadShiftCalendarReturnState() {
+  const raw = String(localStorage.getItem(SHIFT_CALENDAR_RETURN_KEY) || "").trim();
+  if (!raw) return null;
+  localStorage.removeItem(SHIFT_CALENDAR_RETURN_KEY);
+
+  try {
+    const data = JSON.parse(raw);
+    const date = String(data?.date || "").trim();
+    const monthValue = String(data?.monthValue || "").trim();
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return null;
+    if (!/^\d{4}-\d{2}$/.test(monthValue)) return null;
+    return {
+      action: (data?.action === "updated") ? "updated" : "added",
+      shiftId: String(data?.shiftId || "").trim(),
+      date,
+      monthValue
+    };
+  } catch {
+    return null;
+  }
+}
+
+function showShiftSaveBanner(message) {
+  const text = String(message || "").trim();
+  if (!text) return;
+
+  const existing = document.getElementById("shiftSaveBanner");
+  if (existing) existing.remove();
+
+  const banner = document.createElement("div");
+  banner.id = "shiftSaveBanner";
+  banner.setAttribute("role", "status");
+  banner.className = "update-banner";
+
+  const msg = document.createElement("div");
+  msg.textContent = text;
+
+  const actions = document.createElement("div");
+  actions.className = "update-actions";
+
+  const btnDismiss = document.createElement("button");
+  btnDismiss.className = "button-secondary";
+  btnDismiss.textContent = "OK";
+  btnDismiss.onclick = () => banner.remove();
+
+  actions.appendChild(btnDismiss);
+  banner.appendChild(msg);
+  banner.appendChild(actions);
+
+  document.body.appendChild(banner);
+
+  setTimeout(() => {
+    banner.remove();
+  }, 4000);
+}
+
 function renderShiftCalendarCell(dateStr, entries, isOutsideMonth = false) {
   const selected = shiftsPageState.selectedDate === dateStr;
   const today = toDateKey(new Date()) === dateStr;
   const statusClass = getDayStatusClass(entries);
-  const meta = getDayMetaText(entries);
   const num = Number(dateStr.slice(-2));
 
   return `
@@ -2300,7 +2376,6 @@ function renderShiftCalendarCell(dateStr, entries, isOutsideMonth = false) {
       class="shift-day ${statusClass} ${isOutsideMonth ? "is-outside" : ""} ${selected ? "is-selected" : ""} ${today ? "is-today" : ""}"
       onclick="selectShiftCalendarDate('${escapeHtml(dateStr)}')">
       <div class="shift-day-num">${num}</div>
-      <div class="shift-day-meta">${escapeHtml(meta)}</div>
     </button>
   `;
 }
@@ -2313,27 +2388,16 @@ function renderShiftsCalendarGrid(byDate) {
   const headHtml = headers.map(h => `<div class="shift-calendar-head">${h}</div>`).join("");
   let dayHtml = "";
 
-  if (shiftsPageState.mode === "week") {
-    const monday = getMondayFromIsoWeekValue(shiftsPageState.weekValue)
-      || dateOnlyToDate(getWeekStartMonday(shiftsPageState.selectedDate || toDateKey(new Date())));
+  const monthStart = dateOnlyToDate(`${shiftsPageState.monthValue}-01`);
+  const monthEnd = new Date(monthStart.getFullYear(), monthStart.getMonth() + 1, 0);
+  const startOffset = (monthStart.getDay() + 6) % 7; // Monday index
+  const endOffset = 6 - ((monthEnd.getDay() + 6) % 7);
+  const gridStart = addDays(monthStart, -startOffset);
+  const gridEnd = addDays(monthEnd, endOffset);
 
-    for (let i = 0; i < 7; i += 1) {
-      const d = addDays(monday, i);
-      const key = toDateKey(d);
-      dayHtml += renderShiftCalendarCell(key, byDate.get(key) || [], false);
-    }
-  } else {
-    const monthStart = dateOnlyToDate(`${shiftsPageState.monthValue}-01`);
-    const monthEnd = new Date(monthStart.getFullYear(), monthStart.getMonth() + 1, 0);
-    const startOffset = (monthStart.getDay() + 6) % 7; // Monday index
-    const endOffset = 6 - ((monthEnd.getDay() + 6) % 7);
-    const gridStart = addDays(monthStart, -startOffset);
-    const gridEnd = addDays(monthEnd, endOffset);
-
-    for (let d = new Date(gridStart); d <= gridEnd; d = addDays(d, 1)) {
-      const key = toDateKey(d);
-      dayHtml += renderShiftCalendarCell(key, byDate.get(key) || [], d.getMonth() !== monthStart.getMonth());
-    }
+  for (let d = new Date(gridStart); d <= gridEnd; d = addDays(d, 1)) {
+    const key = toDateKey(d);
+    dayHtml += renderShiftCalendarCell(key, byDate.get(key) || [], d.getMonth() !== monthStart.getMonth());
   }
 
   calendarEl.innerHTML = `<div class="shift-calendar">${headHtml}${dayHtml}</div>`;
@@ -2355,75 +2419,218 @@ function renderSelectedShiftDateDetails(byDate) {
   if (!entries.length) {
     detailsEl.innerHTML = `
       <h2 style="margin-top:16px;">${escapeHtml(dateLabel)}</h2>
-      <div class="shift-card">No shifts stored for this date.</div>
+      <div class="shift-card">
+        <div>No shifts stored for this date.</div>
+        <div style="margin-top:12px;">
+          <button class="button-secondary" style="width:auto;" onclick="startNewShiftForDate('${escapeHtml(selected)}')">Add Shift For This Date</button>
+        </div>
+      </div>
     `;
     return;
   }
 
   detailsEl.innerHTML = `
     <div class="shift-day-details">
-      <h2 style="margin-top:16px;">${escapeHtml(dateLabel)}</h2>
+      <div style="margin-top:16px; display:flex; gap:10px; align-items:center; justify-content:space-between; flex-wrap:wrap;">
+        <h2 style="margin:0;">${escapeHtml(dateLabel)}</h2>
+        <button class="button-secondary" style="width:auto;" onclick="startNewShiftForDate('${escapeHtml(selected)}')">Add Shift For This Date</button>
+      </div>
       ${entries.map(entry => formatShiftLine(entry.shift, entry.index)).join("")}
     </div>
   `;
+
+  if (!shiftsPageState.selectedShiftId) return;
+
+  const selectedCard = detailsEl.querySelector(`[data-shift-id="${CSS.escape(shiftsPageState.selectedShiftId)}"]`);
+  if (!selectedCard) return;
+
+  if (shiftsPageState.shouldFocusSelectedShift) {
+    selectedCard.scrollIntoView({ block: "nearest", behavior: "smooth" });
+    shiftsPageState.shouldFocusSelectedShift = false;
+  }
 }
 
 function renderShiftsCalendarPage() {
   if (!document.getElementById("shiftCalendar")) return;
   initShiftsCalendarPageControls();
   const byDate = buildShiftDateMap();
-  if (shiftsPageState.mode === "month") {
-    if (!String(shiftsPageState.selectedDate || "").startsWith(`${shiftsPageState.monthValue}-`)) {
-      shiftsPageState.selectedDate = getFirstShiftDateInMonth(byDate, shiftsPageState.monthValue);
-    }
-  } else {
-    const weekStart = getWeekStartMonday(shiftsPageState.selectedDate || "");
-    const selectedWeekValue = weekStart ? getIsoWeekValue(dateOnlyToDate(weekStart)) : "";
-    if (selectedWeekValue !== shiftsPageState.weekValue) {
-      shiftsPageState.selectedDate = getFirstShiftDateInWeek(byDate, shiftsPageState.weekValue);
-    }
+  if (!String(shiftsPageState.selectedDate || "").startsWith(`${shiftsPageState.monthValue}-`)) {
+    shiftsPageState.selectedDate = getFirstShiftDateInMonth(byDate, shiftsPageState.monthValue);
+    shiftsPageState.selectedShiftId = "";
+    shiftsPageState.shouldFocusSelectedShift = false;
   }
 
   syncShiftsPagePickers();
-  setShiftsPageMode(shiftsPageState.mode);
   renderShiftsCalendarGrid(byDate);
   renderSelectedShiftDateDetails(byDate);
 }
 
 function selectShiftCalendarDate(dateStr) {
   shiftsPageState.selectedDate = String(dateStr || "");
+  shiftsPageState.selectedShiftId = "";
+  shiftsPageState.shouldFocusSelectedShift = false;
   const d = dateOnlyToDate(shiftsPageState.selectedDate);
   if (!Number.isNaN(d.getTime())) {
-    shiftsPageState.weekValue = getIsoWeekValue(d);
     shiftsPageState.monthValue = shiftsPageState.selectedDate.slice(0, 7);
   }
   renderShiftsCalendarPage();
 }
 
+function formatUkDate(dateStr) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(String(dateStr || ""))) return String(dateStr || "");
+  return new Intl.DateTimeFormat("en-GB", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric"
+  }).format(dateOnlyToDate(dateStr));
+}
+
+function getShiftBonusAllocation(shift) {
+  const company = getCompanyById(shift.companyId);
+  const rule = getPrimaryBonusRule(company);
+  if (!rule || rule.type === "none") return { bonusPay: 0, bonusHours: 0 };
+
+  if (!(rule.type === "night_window" && rule.mode === "per_week")) {
+    const wk = getWeekStartMonday(shift.date || "");
+    const key = `${wk}|${String(shift.companyId || "")}`;
+    return calcBonusForShift(shift, company, new Set(), key);
+  }
+
+  const weekStart = getWeekStartMonday(shift.date || "");
+  const weekShifts = shifts
+    .filter(s => getWeekStartMonday(s.date || "") === weekStart && String(s.companyId || "") === String(shift.companyId || ""))
+    .slice()
+    .sort((a, b) => (a.date || "").localeCompare(b.date || "") || (a.start || "").localeCompare(b.start || "") || String(a.id || "").localeCompare(String(b.id || "")));
+
+  const paidSet = new Set();
+  const key = `${weekStart}|${String(shift.companyId || "")}`;
+  for (const item of weekShifts) {
+    const result = calcBonusForShift(item, company, paidSet, key);
+    if (item.id === shift.id) return result;
+  }
+
+  return { bonusPay: 0, bonusHours: 0 };
+}
+
+function getShiftCompensationDetails(shift) {
+  const company = getCompanyById(shift.companyId);
+  const profile = getShiftRateProfile(shift);
+  const mult = getShiftOTMultiplier(shift, profile);
+  const paid = Number(shift.paid || 0);
+  const worked = Number(shift.worked || 0);
+  const breaks = Number(shift.breaks || 0);
+  const payMode = shift?.overrides?.payMode ?? company?.payMode ?? "weekly";
+
+  let baseHours = 0;
+  let otHours = 0;
+
+  if (shift.bankHoliday) {
+    otHours = paid;
+  } else if (shift.annualLeave || shift.sickDay) {
+    baseHours = paid;
+  } else if (payMode === "daily") {
+    const split = splitPaidIntoBaseAndOT_DailyWorked(shift);
+    baseHours = Number(split.baseHours || 0);
+    otHours = Number(split.otHours || 0);
+  } else {
+    const weekStart = getWeekStartMonday(shift.date || "");
+    const threshold = getCompanyWeeklyBaseHours(shift.companyId);
+    let remaining = Number(threshold || 0);
+    const weekShifts = shifts
+      .filter(s => getWeekStartMonday(s.date || "") === weekStart && String(s.companyId || "") === String(shift.companyId || ""))
+      .slice()
+      .sort((a, b) => (a.date || "").localeCompare(b.date || "") || (a.start || "").localeCompare(b.start || "") || String(a.id || "").localeCompare(String(b.id || "")));
+
+    for (const item of weekShifts) {
+      const itemPaid = Number(item.paid || 0);
+      if (item.bankHoliday || item.annualLeave || item.sickDay) {
+        if (item.id === shift.id) {
+          baseHours = item.annualLeave || item.sickDay ? itemPaid : 0;
+          otHours = item.bankHoliday ? itemPaid : 0;
+          break;
+        }
+        continue;
+      }
+
+      const itemBase = Math.min(itemPaid, Math.max(0, remaining));
+      const itemOt = Math.max(0, itemPaid - itemBase);
+      remaining = Math.max(0, remaining - itemBase);
+
+      if (item.id === shift.id) {
+        baseHours = itemBase;
+        otHours = itemOt;
+        break;
+      }
+    }
+  }
+
+  const basePay = baseHours * profile.baseRate;
+  const otPay = otHours * profile.baseRate * mult;
+  const bonus = getShiftBonusAllocation(shift);
+  const bonusPay = Number(bonus.bonusPay || 0);
+  const expenseParking = Number(shift.expenses?.parking || 0);
+  const expenseTolls = Number(shift.expenses?.tolls || 0);
+  const expenses = expenseParking + expenseTolls;
+  const nightOutPay = Number(shift.nightOutPay || 0);
+  const totalEarned = basePay + otPay + bonusPay + nightOutPay;
+
+  return {
+    worked,
+    paid,
+    breaks,
+    baseHours,
+    basePay,
+    otHours,
+    otPay,
+    bonusPay,
+    nightOutPay,
+    expenseParking,
+    expenseTolls,
+    expenses,
+    totalEarned
+  };
+}
+
 function formatShiftLine(s, index) {
   const companyName = getCompanyById(s.companyId)?.name || "Unknown Company";
-  const flags = [s.shiftType === "night" ? "NIGHT" : "", s.annualLeave ? "AL" : "", s.sickDay ? "SICK" : "", s.bankHoliday ? "BH" : ""].filter(Boolean).join(" ");
-  const expenses = Number(s.expenses?.parking || 0) + Number(s.expenses?.tolls || 0);
-  const otHours = splitPaidIntoBaseAndOT_DailyWorked(s).otHours;
-
+  const flags = [s.shiftType === "night" ? "NIGHT" : "", s.annualLeave ? "AL" : "", s.sickDay ? "SICK" : "", s.bankHoliday ? "BH" : "", s.dayOffInLieu ? "TOIL" : ""].filter(Boolean).join(" ");
+  const details = getShiftCompensationDetails(s);
+  const isSelectedShift = String(shiftsPageState.selectedShiftId || "") === String(s.id || "");
   const defects = (s.defects || "").trim();
-  const defectsPreview = defects.length > 80 ? defects.slice(0, 80) + "…" : defects;
+  const trailerInfo = [s.trailer1, s.trailer2].filter(Boolean).join(" • ");
+  const shiftTypeLabel = s.shiftType === "night" ? "Night" : "Day";
+  const timeRange = (s.start && s.finish) ? `${s.start} - ${s.finish}` : "";
+  const vehicle = String(s.vehicle || "").trim();
+  const hasMileage = Number(s.mileage || 0) > 0 || Number(s.startMileage || 0) > 0 || Number(s.finishMileage || 0) > 0;
+  const mileageLabel = hasMileage
+    ? `Mileage: ${Number(s.mileage || 0).toFixed(0)}${Number(s.startMileage || 0) > 0 || Number(s.finishMileage || 0) > 0 ? ` (${Number(s.startMileage || 0).toFixed(0)} -> ${Number(s.finishMileage || 0).toFixed(0)})` : ""}`
+    : "";
+  const optionalInfo = [
+    vehicle ? `<div>Vehicle: ${escapeHtml(vehicle)}</div>` : "",
+    mileageLabel ? `<div>${escapeHtml(mileageLabel)}</div>` : "",
+    trailerInfo ? `<div>Trailers: ${escapeHtml(trailerInfo)}</div>` : "",
+    defects ? `<div>Defects/Notes: ${escapeHtml(defects).replaceAll("\n", "<br>")}</div>` : ""
+  ].filter(Boolean).join("");
 
   return `
-    <div class="shift-card">
-      <strong>${escapeHtml(s.date)}</strong> ${flags ? `(${escapeHtml(flags)})` : ""}<br>
+    <div class="shift-card ${isSelectedShift ? "shift-card-selected" : ""}" data-shift-id="${escapeHtml(String(s.id || ""))}">
+      <strong>${escapeHtml(formatUkDate(s.date))}</strong>${flags ? ` <span class="small">(${escapeHtml(flags)})</span>` : ""}
       <div class="meta">
         <div>${escapeHtml(companyName)}</div>
-        ${(s.start && s.finish) ? `<div>${escapeHtml(s.start)} – ${escapeHtml(s.finish)}</div>` : ""}
-        ${s.vehicle ? `<div>Vehicle: ${escapeHtml(s.vehicle)}</div>` : ""}
-        ${s.trailer1 ? `<div>Trailer 1: ${escapeHtml(s.trailer1)}</div>` : ""}
-        ${s.trailer2 ? `<div>Trailer 2: ${escapeHtml(s.trailer2)}</div>` : ""}
-        ${(Number(s.mileage || 0) > 0) ? `<div>Mileage: ${Number(s.startMileage || 0).toFixed(0)} → ${Number(s.finishMileage || 0).toFixed(0)} (${Number(s.mileage || 0).toFixed(0)} miles)</div>` : ""}
-        ${(Number(s.nightOutPay || 0) > 0 || Number(s.nightOutCount || 0) > 0) ? `<div>Night Out: ${Number(s.nightOutCount || 0).toFixed(0)} • Pay: £${Number(s.nightOutPay || 0).toFixed(2)}</div>` : ""}
-        ${expenses > 0 ? `<div>Expenses: £${expenses.toFixed(2)} (Parking £${Number(s.expenses?.parking || 0).toFixed(2)} • Tolls £${Number(s.expenses?.tolls || 0).toFixed(2)})</div>` : ""}
-        <div>Worked: ${Number(s.worked || 0).toFixed(2)} • Breaks: ${Number(s.breaks || 0).toFixed(2)} • Paid: ${Number(s.paid || 0).toFixed(2)} • OT: ${Number(otHours || 0).toFixed(2)}</div>
-        ${defects ? `<div>Defects/Notes: ${escapeHtml(defectsPreview)}</div>` : ""}
-        ${defects && defects.length > 80 ? `<details style="margin-top:8px;"><summary class="small">View full defects/notes</summary><div style="margin-top:8px;">${escapeHtml(defects).replaceAll("\n","<br>")}</div></details>` : ""}
+        <div>Shift Type: ${escapeHtml(shiftTypeLabel)}</div>
+        ${timeRange ? `<div>Start / Finish: ${escapeHtml(timeRange)}</div>` : ""}
+        <div>Worked Hours: ${details.worked.toFixed(2)}</div>
+        <div>Paid Hours: ${details.paid.toFixed(2)}</div>
+        <div>Hours @ Base Rate: ${details.baseHours.toFixed(2)}</div>
+        <div>Pay @ Base Rate: £${details.basePay.toFixed(2)}</div>
+        <div>Hours @ Overtime Rate: ${details.otHours.toFixed(2)}</div>
+        <div>Pay @ Overtime Rate: £${details.otPay.toFixed(2)}</div>
+        <div>Unpaid Break Hrs: ${details.breaks.toFixed(2)}</div>
+        <div>Bonus Pay: £${details.bonusPay.toFixed(2)}</div>
+        ${details.nightOutPay > 0 ? `<div>Night Out Pay: £${details.nightOutPay.toFixed(2)}</div>` : ""}
+        ${details.expenses > 0 ? `<div>Expenses: £${details.expenses.toFixed(2)}${details.expenseParking > 0 || details.expenseTolls > 0 ? ` (Parking £${details.expenseParking.toFixed(2)} • Tolls £${details.expenseTolls.toFixed(2)})` : ""}</div>` : ""}
+        <div>Total Earned: £${details.totalEarned.toFixed(2)}</div>
+        ${optionalInfo ? `<div style="margin-top:8px;">${optionalInfo}</div>` : ""}
       </div>
 
       <div style="margin-top:10px; display:flex; gap:10px; flex-wrap:wrap;">
@@ -2491,6 +2698,13 @@ function deleteShift(index) {
   renderShiftsCalendarPage();
 }
 
+function startNewShiftForDate(dateStr) {
+  const value = String(dateStr || "").trim();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return;
+  localStorage.setItem("newShiftDate", value);
+  window.location.href = "enter-shift.html";
+}
+
 function startEditShift(index) {
   if (!Number.isInteger(index) || index < 0 || index >= shifts.length) return;
   localStorage.setItem("editShiftIndex", String(index));
@@ -2530,6 +2744,12 @@ function loadShiftForEditingIfRequested() {
   setVal("mileageDone", s.mileage || 0);
   setVal("expenseParking", s.expenses?.parking || 0);
   setVal("expenseTolls", s.expenses?.tolls || 0);
+  setVal("overrideBaseRate", s.overrides?.baseRate);
+  setVal("overrideBreakHours", s.overrides?.breakHours);
+  setVal("overrideOtWeekday", s.overrides?.otWeekday);
+  setVal("overrideOtSaturday", s.overrides?.otSaturday);
+  setVal("overrideOtSunday", s.overrides?.otSunday);
+  setVal("overrideOtBankHoliday", s.overrides?.otBankHoliday);
   setVal("company", s.companyId);
   applyCompanyShiftEntryVisibility(s.companyId);
   renderVehicleMenuOptions(s.vehicle || "");
@@ -2540,8 +2760,22 @@ function loadShiftForEditingIfRequested() {
   setCheck("annualLeave", s.annualLeave);
   setCheck("sickDay", s.sickDay);
   setCheck("bankHoliday", s.bankHoliday);
+  setCheck("dayOffInLieu", s.dayOffInLieu);
   setCheck("nightOut", s.nightOut || Number(s.nightOutCount || 0) > 0 || Number(s.nightOutPay || 0) > 0);
   initNightOutBehavior();
+}
+
+function loadShiftDateForNewEntryIfRequested() {
+  if (editingIndex !== null) return;
+
+  const date = String(localStorage.getItem("newShiftDate") || "").trim();
+  if (!date) return;
+  localStorage.removeItem("newShiftDate");
+
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return;
+
+  const dateEl = document.getElementById("date");
+  if (dateEl) dateEl.value = date;
 }
 
 /* ===============================
@@ -2589,7 +2823,6 @@ function restoreBackup(event) {
       renderAll();
       renderCompanies();
       renderCompanyDropdowns();
-      loadSettings();
       renderCompanySummary();
       renderCurrentPeriodTiles();
       renderLeaveStats();
@@ -2720,7 +2953,7 @@ function buildPayslipHTML({ title, periodLabel, periodStart, periodEnd, overall,
 
   const shiftRows = rows.map(s => {
     const companyName = getCompanyById(s.companyId)?.name || "Unknown Company";
-    const flags = [s.annualLeave ? "AL" : "", s.sickDay ? "SICK" : "", s.bankHoliday ? "BH" : ""].filter(Boolean).join(" ");
+    const flags = [s.annualLeave ? "AL" : "", s.sickDay ? "SICK" : "", s.bankHoliday ? "BH" : "", s.dayOffInLieu ? "TOIL" : ""].filter(Boolean).join(" ");
     const expenses = Number(s.expenses?.parking || 0) + Number(s.expenses?.tolls || 0);
     return `
       <tr>
@@ -2894,34 +3127,8 @@ function exportPayslip(period = "week") {
     .slice()
     .sort((a, b) => (a.date || "").localeCompare(b.date || "") || (a.start || "").localeCompare(b.start || ""))
     .map(s => {
-      const profile = getShiftRateProfile(s);
-      const mult = getShiftOTMultiplier(s, profile);
-
-      const paid = Number(s.paid || 0);
-      let baseH = Number(s.baseHours);
-      let otH = Number(s.otHours);
-
-      if (!Number.isFinite(baseH) || !Number.isFinite(otH)) {
-        const split = splitPaidIntoBaseAndOT_DailyWorked(s);
-        baseH = split.baseHours;
-        otH = split.otHours;
-      }
-
-      let linePay = 0;
-      if (s.bankHoliday) {
-        linePay = paid * profile.baseRate * mult;
-      } else {
-        linePay = (Number(baseH || 0) * profile.baseRate) + (Number(otH || 0) * profile.baseRate * mult);
-      }
-
-      // add bonus estimate on the line
-      const company = getCompanyById(s.companyId);
-      const bonus = calcBonusForShift(s, company, new Set(), "");
-      linePay += Number(bonus.bonusPay || 0);
-      linePay += Number(s.nightOutPay || 0);
-      // per-week bonus can’t be reliably allocated per line, so it remains excluded from line pay.
-
-      return { ...s, __payTotal: linePay };
+      const details = getShiftCompensationDetails(s);
+      return { ...s, __payTotal: Number(details.totalEarned || 0) };
     });
 
   const html = buildPayslipHTML({
@@ -2969,13 +3176,11 @@ document.addEventListener("DOMContentLoaded", () => {
   renderCompanyDropdowns();
   renderCompanies();
   renderVehicles();
-
-  // Settings page
-  loadSettings();
   initSummaryTabs();
 
   // Shift entry page defaults + editing
   loadShiftForEditingIfRequested();
+  loadShiftDateForNewEntryIfRequested();
   initShiftTypeBehavior();
   initMileageBehavior();
   initLeaveCheckboxBehavior();
@@ -2996,6 +3201,7 @@ document.addEventListener("DOMContentLoaded", () => {
   
   // Companies page
   updateCompanyFormVisibility();
+  resetCompanyForm();
 
   initVehicleCombobox();
 });
