@@ -338,6 +338,20 @@ button:active{ transform: scale(0.99); }
 }
 .shift-card strong{ font-size: 14px; }
 .shift-card .meta{ color: var(--muted); font-size: 13px; margin-top: 6px; }
+.period-heading{
+  text-align: center;
+}
+.period-range{
+  text-align: center;
+  color: var(--muted);
+  font-size: 13px;
+}
+.quick-actions-card{
+  text-align: center;
+}
+.quick-actions-links{
+  justify-content: center;
+}
 .shift-card-selected{
   border-color: rgba(124,92,255,0.78);
   box-shadow: 0 0 0 2px rgba(124,92,255,0.18), var(--shadowB);

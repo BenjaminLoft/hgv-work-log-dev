@@ -50,7 +50,7 @@
     <div class="shift-card">
       <strong>2. Configure pay and shift rules</strong>
       <div class="meta" style="margin-top:8px;">
-        In the company record, set base rate, overtime mode, overtime multipliers, pay cycle, base weekly hours or daily OT threshold, minimum paid shift hours, leave allowance, standard shift length, bonus rules, and night-out pay.
+        In the company record, set base rate, overtime mode, overtime multipliers, pay cycle, base weekly hours or daily OT threshold, minimum paid shift hours, leave allowance, standard shift length, fixed or variable break deductions, bonus rules, and night-out pay.
       </div>
     </div>
 
@@ -94,7 +94,7 @@
     <div class="shift-card">
       <strong>How Pay Is Calculated</strong>
       <div class="meta" style="margin-top:8px;">
-        Weekly overtime companies use base weekly hours before overtime begins. Daily overtime companies use a per-shift worked-hours threshold. Base rate comes from the company unless you set a shift override. Overtime multipliers can differ for weekdays, Saturday, Sunday, and bank holidays. Bonus rules can pay per hour in a time window, per shift, per week, or as a flat per-shift bonus. Night-out pay is added on top. Expenses are tracked separately and shown in summaries and exports.
+        Weekly overtime companies use base weekly hours before overtime begins. Daily overtime companies use a per-shift worked-hours threshold. Base rate comes from the company unless you set a shift override. Overtime multipliers can differ for weekdays, Saturday, Sunday, and bank holidays. Breaks can be a fixed deduction or variable rules based on hours worked. Bonus rules can pay per hour in a time window, per shift, per week, or as a flat per-shift bonus. Night-out pay is added on top. Expenses are tracked separately and shown in summaries and exports.
       </div>
     </div>
 
@@ -152,7 +152,7 @@
     <div class="shift-card">
       <strong>Leave and Sickness</strong>
       <div class="meta" style="margin-top:8px;">
-        Annual leave and sick days use the company standard shift length to derive paid hours. Yearly leave balance is calculated as total annual leave allowance across selectable companies, plus lieu days earned, minus annual leave taken.
+        Annual leave and sick days use the company standard shift length and break rules to derive paid hours. Yearly leave balance is calculated as total annual leave allowance across selectable companies, plus lieu days earned, minus annual leave taken.
       </div>
     </div>
 
@@ -196,7 +196,7 @@
     <div class="shift-card">
       <strong>Why is a leave or sick day paid at the wrong hours?</strong>
       <div class="meta" style="margin-top:8px;">
-        Check the company standard shift length. That value is used for annual leave and sick day paid hours.
+        Check the company standard shift length and break setup. Leave and sick pay use that standard length minus the company break deduction.
       </div>
     </div>
 

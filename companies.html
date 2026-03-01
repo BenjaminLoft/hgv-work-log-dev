@@ -52,17 +52,41 @@
         <option value="daily">Daily overtime (after X hours worked)</option>
       </select>
 
-      <!-- Only relevant for daily mode -->
-      <div id="dailyOtFields" style="display:none;">
-        <label>Daily OT after worked hours</label>
-        <input type="number" step="0.25" id="dailyOTAfterWorkedHours" placeholder="Leave blank to use the standard shift length">
-        <div class="small" style="margin-top:6px;">
-          Example: 10 means any time worked beyond 10.00 hrs is overtime (break doesn’t count). If left blank, the standard shift length below is used as the fallback threshold.
+      <label>Standard Shift Length (hrs incl break)</label>
+      <input type="number" step="0.01" id="standardShiftLength" placeholder="Used for annual leave/sick pay and daily OT fallback, e.g. 9">
+      <div class="small" style="margin-top:6px;">
+        Used for annual leave and sick day paid hours. Paid leave hours = standard shift length minus the company break deduction.
+      </div>
+      <div class="small" id="leavePaidHoursPreview" style="margin-top:6px;"></div>
+
+      <label>Minimum Paid Shift Hours (optional)</label>
+      <input type="number" step="0.25" id="minPaidShiftHours" placeholder="e.g. 8">
+
+      <div class="grid">
+        <div>
+          <label>Default Start Time</label>
+          <input type="time" id="companyDefaultStart">
+        </div>
+        <div>
+          <label>Default Finish Time</label>
+          <input type="time" id="companyDefaultFinish">
         </div>
       </div>
 
-      <label>Minimum paid shift hours (optional)</label>
-      <input type="number" step="0.25" id="minPaidShiftHours" placeholder="e.g. 8">
+      <div class="grid">
+        <div>
+          <label>Base Weekly Hours</label>
+          <input type="number" step="0.01" id="baseWeeklyHours" placeholder="e.g. 45">
+        </div>
+        <div>
+          <label>Overtime After Worked Hours</label>
+          <input type="number" step="0.25" id="dailyOTAfterWorkedHours" placeholder="Daily mode only, e.g. 10">
+        </div>
+      </div>
+
+      <div class="small" id="dailyOtFields" style="display:none; margin-top:6px;">
+        In daily overtime mode, worked hours beyond this threshold become overtime. If left blank or 0, the standard shift length is used as the fallback threshold.
+      </div>
 
       <label>Pay Cycle</label>
       <select id="companyPayCycle">
@@ -78,21 +102,6 @@
           Use the first Monday of this company's 4-week pay cycle.
         </div>
       </div>
-
-      <h2>Defaults & Leave</h2>
-      <div class="grid">
-        <div>
-          <label>Default Start Time</label>
-          <input type="time" id="companyDefaultStart">
-        </div>
-        <div>
-          <label>Default Finish Time</label>
-          <input type="time" id="companyDefaultFinish">
-        </div>
-      </div>
-
-      <label>Annual Leave Allowance (days/year)</label>
-      <input type="number" step="1" min="0" id="companyAnnualLeaveAllowance" placeholder="e.g. 28">
 
       <h2>Bonus</h2>
 
@@ -150,23 +159,47 @@
         </div>
       </div>
 
-      <h2>Hours Rules</h2>
-      <div class="grid">
-        <div>
-          <label>Base Weekly Hours</label>
-          <input type="number" step="0.01" id="baseWeeklyHours" placeholder="e.g. 45">
-        </div>
-        <div>
-          <label>Base Daily Paid Hours</label>
-          <input type="number" step="0.01" id="baseDailyPaidHours" placeholder="e.g. 9">
+      <h2>Break Rules</h2>
+      <label>Break Deduction Type</label>
+      <select id="breakRuleMode">
+        <option value="fixed">Fixed break</option>
+        <option value="variable">Variable break rules</option>
+      </select>
+
+      <div id="fixedBreakWrap">
+        <label>Fixed Unpaid Break Hours</label>
+        <input type="number" step="0.25" min="0" id="fixedBreakHours" placeholder="e.g. 1">
+        <div class="small" style="margin-top:6px;">
+          This break deduction is also used when calculating annual leave and sick day paid hours.
         </div>
       </div>
 
-      <label>Standard Shift Length for Leave/Sick Days (hrs incl break)</label>
-      <input type="number" step="0.01" id="standardShiftLength" placeholder="Used for annual leave/sick day paid hours, and as the daily OT fallback if the field above is blank, e.g. 9">
+      <div id="variableBreakWrap">
+        <div class="small" style="margin-top:6px;">
+          The highest matching rule is used. Example: after 6 worked hours deduct 0.5 hr, after 9 worked hours deduct 1 hr.
+        </div>
+        <div class="small" style="margin-top:6px;">
+          These break rules are also used when calculating annual leave and sick day paid hours from the standard shift length.
+        </div>
+        <div id="breakRuleList"></div>
+        <div style="margin-top:10px;">
+          <button type="button" class="button-secondary" style="width:auto;" onclick="addBreakRuleEntry()">Add Break Rule</button>
+        </div>
+      </div>
+
+      <label>Annual Leave Allowance (days/year)</label>
+      <input type="number" step="1" min="0" id="companyAnnualLeaveAllowance" placeholder="e.g. 28">
 
       <label>Night Out Pay (£ per night out)</label>
       <input type="number" step="0.01" min="0" id="companyNightOutPay" placeholder="e.g. 26.20">
+
+      <h2>Contact</h2>
+
+      <label>Contact Name</label>
+      <input type="text" id="contactName" placeholder="e.g. Transport Manager">
+
+      <label>Contact Number</label>
+      <input type="tel" id="contactNumber" placeholder="e.g. 07...">
 
       <h2>Shift Entry Fields</h2>
 
@@ -190,14 +223,6 @@
         Only assigned vehicles appear in Enter Shift for this company.
       </div>
       <div id="companyVehicleIdsWrap" class="shift-card" style="margin-top:10px;"></div>
-
-      <h2>Contact</h2>
-
-      <label>Contact Name</label>
-      <input type="text" id="contactName" placeholder="e.g. Transport Manager">
-
-      <label>Contact Number</label>
-      <input type="tel" id="contactNumber" placeholder="e.g. 07...">
 
       <button type="button" onclick="addOrUpdateCompany()">Save Company</button>
       <button type="button" class="button-secondary" onclick="resetCompanyForm()">Clear</button>

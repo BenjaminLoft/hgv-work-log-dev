@@ -6,7 +6,7 @@
    STORAGE
 ================================ */
 
-const DATA_MODEL_VERSION = 9;
+const DATA_MODEL_VERSION = 10;
 const DATA_VERSION_KEY = "dataVersion";
 const FOUR_WEEK_BLOCK_ANCHOR = "2024-01-01";
 const DEFAULT_SETTINGS = {
@@ -138,6 +138,20 @@ function normalizeBonusRule(src) {
   return { type: "none", amount: 0, name: "No bonus" };
 }
 
+function normalizeBreakRules(entries) {
+  const source = Array.isArray(entries) ? entries : [];
+  return source
+    .map(item => {
+      const rule = (item && typeof item === "object") ? item : {};
+      return {
+        afterWorkedHours: clamp0(rule.afterWorkedHours),
+        breakHours: clamp0(rule.breakHours)
+      };
+    })
+    .filter(rule => rule.afterWorkedHours > 0 && rule.breakHours >= 0)
+    .sort((a, b) => a.afterWorkedHours - b.afterWorkedHours || a.breakHours - b.breakHours);
+}
+
 function toLegacyNightBonusFromRule(rule) {
   if (!rule || rule.type !== "night_window") {
     return { mode: "none", amount: 0, start: "22:00", end: "06:00" };
@@ -168,6 +182,9 @@ function normalizeCompany(src, fallbackSettings = {}) {
     ? activeRules
     : (migratedLegacy.mode !== "none" ? [migratedLegacy] : []);
   const legacyFromRule = toLegacyNightBonusFromRule(finalRules[0] || null);
+  const breakRuleMode = c.breakRuleMode === "variable" ? "variable" : "fixed";
+  const fixedBreakHours = Number.isFinite(Number(c.fixedBreakHours)) ? clamp0(c.fixedBreakHours) : 1;
+  const breakRules = normalizeBreakRules(Array.isArray(c.breakRules) ? c.breakRules : []);
 
   return {
     ...c,
@@ -179,6 +196,9 @@ function normalizeCompany(src, fallbackSettings = {}) {
     baseWeeklyHours: Number(c.baseWeeklyHours || 0),
     baseDailyPaidHours: Number(c.baseDailyPaidHours || 0),
     standardShiftLength: Number(c.standardShiftLength || 0),
+    breakRuleMode,
+    fixedBreakHours,
+    breakRules,
     defaultStart: String(c.defaultStart ?? fallback.defaultStart ?? ""),
     defaultFinish: String(c.defaultFinish ?? fallback.defaultFinish ?? ""),
     annualLeaveAllowance: Number(c.annualLeaveAllowance ?? fallback.annualLeaveAllowance ?? 0),
@@ -451,6 +471,9 @@ function ensureDefaultCompany() {
     baseWeeklyHours: settings.baseHours ?? 45,
     dailyOTAfterWorkedHours: 0,        // used only if payMode="daily"
     minPaidShiftHours: 0,              // agency minimum paid
+    breakRuleMode: "fixed",
+    fixedBreakHours: 1,
+    breakRules: [],
     defaultStart: settings.defaultStart ?? "",
     defaultFinish: settings.defaultFinish ?? "",
     annualLeaveAllowance: settings.annualLeaveAllowance ?? 0,
@@ -491,6 +514,10 @@ function getCompanyFormSeedValues() {
   return {
     baseRate: Number(source?.baseRate || 0),
     baseWeeklyHours: Number(source?.baseWeeklyHours || 0),
+    standardShiftLength: Number(source?.standardShiftLength || 0),
+    breakRuleMode: String(source?.breakRuleMode || "fixed"),
+    fixedBreakHours: Number(source?.fixedBreakHours ?? 1),
+    breakRules: normalizeBreakRules(Array.isArray(source?.breakRules) ? source.breakRules : []),
     defaultStart: String(source?.defaultStart || ""),
     defaultFinish: String(source?.defaultFinish || ""),
     annualLeaveAllowance: Number(source?.annualLeaveAllowance || 0),
@@ -659,6 +686,11 @@ function renderCompanies() {
       : (getUserCompanies().length === 1 && c.id !== "cmp_default");
 
     const nbText = getBonusSummaryText(c);
+    const breakText = c.breakRuleMode === "variable"
+      ? (normalizeBreakRules(c.breakRules).length
+          ? normalizeBreakRules(c.breakRules).map(rule => `${rule.afterWorkedHours.toFixed(2)}h -> ${rule.breakHours.toFixed(2)}h`).join(" • ")
+          : "Variable")
+      : `${Number(c.fixedBreakHours ?? 1).toFixed(2)} hrs fixed`;
 
     return `
       <div class="shift-card">
@@ -668,9 +700,9 @@ function renderCompanies() {
 		<div class="meta" style="margin-top:8px;">
           Pay mode: ${escapeHtml(c.payMode || "weekly")}<br>
           Rate: £${Number(c.baseRate || 0).toFixed(2)}<br>
-		  ${c.baseDailyPaidHours ? `Base daily paid (salaried): ${Number(c.baseDailyPaidHours || 0).toFixed(2)} hrs<br>` : ""}
 		  ${c.standardShiftLength ? `Std shift length: ${Number(c.standardShiftLength || 0).toFixed(2)} hrs<br>` : ""}
           ${(c.defaultStart || c.defaultFinish) ? `Defaults: ${escapeHtml(c.defaultStart || "--:--")} - ${escapeHtml(c.defaultFinish || "--:--")}<br>` : ""}
+          Breaks: ${escapeHtml(breakText)}<br>
           Leave allowance: ${Number(c.annualLeaveAllowance || 0).toFixed(0)} days<br>
           Pay cycle: ${escapeHtml(c.payCycle === "four_week" ? "4-weekly" : (c.payCycle === "month" ? "Monthly" : "Weekly"))}<br>
           ${c.payCycle === "four_week" ? `4-week cycle start: ${escapeHtml(c.fourWeekCycleStart || FOUR_WEEK_BLOCK_ANCHOR)}<br>` : ""}
@@ -753,6 +785,13 @@ function addOrUpdateCompany() {
     })];
   }
   const legacyNightBonus = toLegacyNightBonusFromRule(bonusRules[0] || null);
+  const breakRuleMode = document.getElementById("breakRuleMode")?.value === "variable" ? "variable" : "fixed";
+  const breakRules = breakRuleMode === "variable"
+    ? readBreakRuleEntries()
+    : [];
+  const fixedBreakHours = breakRuleMode === "fixed"
+    ? (Number(document.getElementById("fixedBreakHours")?.value) || 0)
+    : 0;
 
   const company = {
     id: id || generateCompanyId(),
@@ -762,8 +801,10 @@ function addOrUpdateCompany() {
     payMode: document.getElementById("payMode")?.value || "weekly",
 	payCycle,
 	baseWeeklyHours: Number(document.getElementById("baseWeeklyHours")?.value) || 0,
-	baseDailyPaidHours: Number(document.getElementById("baseDailyPaidHours")?.value) || 0,
 	standardShiftLength: Number(document.getElementById("standardShiftLength")?.value) || 0,
+	breakRuleMode,
+	fixedBreakHours,
+	breakRules,
 	defaultStart: document.getElementById("companyDefaultStart")?.value || "",
 	defaultFinish: document.getElementById("companyDefaultFinish")?.value || "",
 	annualLeaveAllowance: Number(document.getElementById("companyAnnualLeaveAllowance")?.value) || 0,
@@ -834,6 +875,7 @@ function editCompany(id) {
   // Pay mode first (so UI can react)
   setVal("payMode", c.payMode || "weekly");
   setVal("companyPayCycle", c.payCycle || "weekly");
+  setVal("breakRuleMode", c.breakRuleMode || "fixed");
 
   // If you have UI logic to show/hide daily OT + bonus fields, call it here
   if (typeof updateCompanyFormVisibility === "function") {
@@ -846,6 +888,7 @@ function editCompany(id) {
 
   setVal("dailyOTAfterWorkedHours", c.dailyOTAfterWorkedHours);
   setVal("minPaidShiftHours", c.minPaidShiftHours);
+  setVal("fixedBreakHours", c.fixedBreakHours ?? 1);
   setVal("companyDefaultStart", c.defaultStart);
   setVal("companyDefaultFinish", c.defaultFinish);
   setVal("companyAnnualLeaveAllowance", c.annualLeaveAllowance);
@@ -868,9 +911,9 @@ function editCompany(id) {
 
   // Hours rules
   setVal("baseWeeklyHours", c.baseWeeklyHours);
-  setVal("baseDailyPaidHours", c.baseDailyPaidHours);
   setVal("standardShiftLength", c.standardShiftLength);
   setVal("companyNightOutPay", c.nightOutPay || 0);
+  renderBreakRuleEntries(c.breakRuleMode === "variable" ? c.breakRules : getDefaultVariableBreakRules(), { preserveEmpty: true });
 
   // Contact
   setVal("contactName", c.contactName);
@@ -930,11 +973,11 @@ function resetCompanyForm() {
   const ids = [
     "companyId", "companyName", "companyBaseRate",
     "payMode", "companyPayCycle", "baseWeeklyHours", "dailyOTAfterWorkedHours", "minPaidShiftHours",
-    "companyDefaultStart", "companyDefaultFinish", "companyAnnualLeaveAllowance",
+    "companyDefaultStart", "companyDefaultFinish", "companyAnnualLeaveAllowance", "fixedBreakHours",
     "companyFourWeekCycleStart",
     "otWeekday", "otSaturday", "otSunday", "otBankHoliday",
     "companyNightOutPay",
-    "bonusType", "bonusMode", "bonusAmount", "bonusStart", "bonusEnd",
+    "bonusType", "bonusMode", "bonusAmount", "bonusStart", "bonusEnd", "breakRuleMode",
     "contactName", "contactNumber"
   ];
   ids.forEach(id => {
@@ -949,8 +992,9 @@ function resetCompanyForm() {
   if (document.getElementById("baseWeeklyHours")) document.getElementById("baseWeeklyHours").value = seed.baseWeeklyHours;
   if (document.getElementById("dailyOTAfterWorkedHours")) document.getElementById("dailyOTAfterWorkedHours").value = 0;
   if (document.getElementById("minPaidShiftHours")) document.getElementById("minPaidShiftHours").value = 0;
-  if (document.getElementById("baseDailyPaidHours")) document.getElementById("baseDailyPaidHours").value = 0;
-  if (document.getElementById("standardShiftLength")) document.getElementById("standardShiftLength").value = 0;
+  if (document.getElementById("standardShiftLength")) document.getElementById("standardShiftLength").value = seed.standardShiftLength || 0;
+  if (document.getElementById("breakRuleMode")) document.getElementById("breakRuleMode").value = seed.breakRuleMode || "fixed";
+  if (document.getElementById("fixedBreakHours")) document.getElementById("fixedBreakHours").value = seed.fixedBreakHours ?? 1;
   if (document.getElementById("companyDefaultStart")) document.getElementById("companyDefaultStart").value = seed.defaultStart;
   if (document.getElementById("companyDefaultFinish")) document.getElementById("companyDefaultFinish").value = seed.defaultFinish;
   if (document.getElementById("companyAnnualLeaveAllowance")) document.getElementById("companyAnnualLeaveAllowance").value = seed.annualLeaveAllowance;
@@ -967,6 +1011,7 @@ function resetCompanyForm() {
   if (document.getElementById("bonusAmount")) document.getElementById("bonusAmount").value = 0.5;
   if (document.getElementById("bonusStart")) document.getElementById("bonusStart").value = "22:00";
   if (document.getElementById("bonusEnd")) document.getElementById("bonusEnd").value = "06:00";
+  renderBreakRuleEntries(seed.breakRules?.length ? seed.breakRules : getDefaultVariableBreakRules(), { preserveEmpty: true });
 
   if (document.getElementById("showVehicleField")) document.getElementById("showVehicleField").checked = true;
   if (document.getElementById("showTrailerFields")) document.getElementById("showTrailerFields").checked = true;
@@ -1143,11 +1188,34 @@ function getCompanyShiftEntryDefaults(companyId) {
   };
 }
 
+function getBreakHoursForWorked(workedHours, company = null) {
+  const worked = clamp0(workedHours);
+  const c = company || {};
+  if (String(c.breakRuleMode || "fixed") === "variable") {
+    const rules = normalizeBreakRules(c.breakRules);
+    let matched = 0;
+    rules.forEach(rule => {
+      if (worked >= rule.afterWorkedHours) matched = rule.breakHours;
+    });
+    return clamp0(matched);
+  }
+  return clamp0(c.fixedBreakHours ?? 1);
+}
+
+function getLeavePaidHours(company) {
+  const c = company || {};
+  const standardLength = clamp0(c.standardShiftLength || 9);
+  if (standardLength <= 0) return 0;
+  const breakHours = getBreakHoursForWorked(standardLength, c);
+  return Math.max(0, standardLength - breakHours);
+}
+
 /* ===============================
    HOURS + NIGHT HOURS
 ================================ */
 
-function calculateHours(start, finish, isAL, isSick, leavePaidHours = 9) {
+function calculateHours(start, finish, isAL, isSick, options = {}) {
+  const leavePaidHours = clamp0(options.leavePaidHours ?? 9);
   if (isAL || isSick) {
     const paid = clamp0(leavePaidHours || 9);
     return { worked: paid, breaks: 0, paid };
@@ -1160,7 +1228,7 @@ function calculateHours(start, finish, isAL, isSick, leavePaidHours = 9) {
   if (f < s) f.setDate(f.getDate() + 1);
 
   const worked = (f - s) / 1000 / 60 / 60;
-  const breaks = 1;
+  const breaks = clamp0(options.breakHours ?? 1);
   const paid = Math.max(0, worked - breaks);
 
   return { worked, breaks, paid };
@@ -1659,7 +1727,19 @@ function addOrUpdateShift() {
   const showVehicle = company ? (company.showVehicleField !== false) : true;
   const showTrailers = company ? (company.showTrailerFields !== false) : true;
   const showMileage = company ? !!company.showMileageFields : false;
-  const leavePaidHours = Math.max(0, clamp0(company?.standardShiftLength || 9) - 1);
+  const leavePaidHours = getLeavePaidHours(company);
+  const defaultBreakHours = getBreakHoursForWorked(
+    (() => {
+      const start = document.getElementById("start")?.value || "";
+      const finish = document.getElementById("finish")?.value || "";
+      if (!start || !finish) return 0;
+      let s = new Date(`1970-01-01T${start}:00`);
+      let f = new Date(`1970-01-01T${finish}:00`);
+      if (f < s) f.setDate(f.getDate() + 1);
+      return (f - s) / 1000 / 60 / 60;
+    })(),
+    company
+  );
 
   const vehicleEntries = readShiftVehicleEntries(showMileage);
   const trailers = showTrailers ? readShiftTrailerEntries() : [];
@@ -1732,7 +1812,10 @@ function addOrUpdateShift() {
   };
 
   // Hours
-  const hrs = calculateHours(shift.start, shift.finish, shift.annualLeave, shift.sickDay, leavePaidHours);
+  const hrs = calculateHours(shift.start, shift.finish, shift.annualLeave, shift.sickDay, {
+    leavePaidHours,
+    breakHours: defaultBreakHours
+  });
   shift.worked = hrs.worked;
   shift.breaks = hrs.breaks;
   shift.paid = hrs.paid;
@@ -2472,11 +2555,108 @@ function toggleCompanySummary(companyId) {
   el.style.display = (el.style.display === "none") ? "block" : "none";
 }
 
+function getDefaultVariableBreakRules() {
+  return [
+    { afterWorkedHours: 6, breakHours: 0.5 },
+    { afterWorkedHours: 9, breakHours: 1 }
+  ];
+}
+
+function createBreakRuleRow(rule = {}, canRemove = true) {
+  const afterWorkedHours = clamp0(rule.afterWorkedHours);
+  const breakHours = clamp0(rule.breakHours);
+  return `
+    <div class="grid break-rule-row" style="margin-top:10px;">
+      <div>
+        <label style="margin-top:0;">After Worked Hours</label>
+        <input type="number" class="break-rule-threshold" step="0.25" min="0" value="${afterWorkedHours > 0 ? escapeHtml(String(afterWorkedHours)) : ""}" placeholder="e.g. 6">
+      </div>
+      <div>
+        <label style="margin-top:0;">Break Hours</label>
+        <input type="number" class="break-rule-hours" step="0.25" min="0" value="${breakHours > 0 ? escapeHtml(String(breakHours)) : ""}" placeholder="e.g. 0.5">
+      </div>
+      <div style="display:flex; align-items:end;">
+        ${canRemove ? `<button type="button" class="button-secondary break-rule-remove" style="width:auto;">Remove</button>` : ""}
+      </div>
+    </div>
+  `;
+}
+
+function readBreakRuleEntries() {
+  const wrap = document.getElementById("breakRuleList");
+  if (!wrap) return [];
+  return normalizeBreakRules([...wrap.querySelectorAll(".break-rule-row")].map(row => ({
+    afterWorkedHours: Number(row.querySelector(".break-rule-threshold")?.value || 0),
+    breakHours: Number(row.querySelector(".break-rule-hours")?.value || 0)
+  })));
+}
+
+function renderBreakRuleEntries(entries = [], options = {}) {
+  const wrap = document.getElementById("breakRuleList");
+  if (!wrap) return;
+  let normalized = normalizeBreakRules(entries);
+  const requestedCount = Math.max(
+    Number(options.requestedCount || 0),
+    normalized.length,
+    options.preserveEmpty === false ? 0 : (normalized.length ? normalized.length : getDefaultVariableBreakRules().length)
+  );
+  if (!normalized.length && options.preserveEmpty !== false) normalized = getDefaultVariableBreakRules();
+  while (normalized.length < requestedCount) normalized.push({ afterWorkedHours: 0, breakHours: 0 });
+  wrap.innerHTML = normalized
+    .map((rule, index) => createBreakRuleRow(rule, normalized.length > 1 || index > 0))
+    .join("");
+}
+
+function addBreakRuleEntry() {
+  const entryCount = Math.max(document.querySelectorAll("#breakRuleList .break-rule-row").length, getDefaultVariableBreakRules().length) + 1;
+  renderBreakRuleEntries(readBreakRuleEntries(), { preserveEmpty: true, requestedCount: entryCount });
+}
+
+function initBreakRuleBehavior() {
+  const wrap = document.getElementById("breakRuleList");
+  if (!wrap) return;
+  wrap.addEventListener("click", (e) => {
+    const btn = e.target.closest(".break-rule-remove");
+    if (!btn) return;
+    const rows = [...wrap.querySelectorAll(".break-rule-row")];
+    const idx = rows.indexOf(btn.closest(".break-rule-row"));
+    if (idx < 0) return;
+    const entries = readBreakRuleEntries();
+    entries.splice(idx, 1);
+    renderBreakRuleEntries(entries, { preserveEmpty: true, requestedCount: Math.max(rows.length - 1, 1) });
+    updateLeavePaidHoursPreview();
+  });
+}
+
+function getCompanyFormPreviewSource() {
+  return {
+    standardShiftLength: Number(document.getElementById("standardShiftLength")?.value || 0),
+    breakRuleMode: document.getElementById("breakRuleMode")?.value === "variable" ? "variable" : "fixed",
+    fixedBreakHours: Number(document.getElementById("fixedBreakHours")?.value || 0),
+    breakRules: readBreakRuleEntries()
+  };
+}
+
+function updateLeavePaidHoursPreview() {
+  const el = document.getElementById("leavePaidHoursPreview");
+  if (!el) return;
+  const source = getCompanyFormPreviewSource();
+  const standardShiftLength = clamp0(source.standardShiftLength);
+  if (standardShiftLength <= 0) {
+    el.textContent = "Current leave/sick paid hours: enter a standard shift length.";
+    return;
+  }
+  const breakHours = getBreakHoursForWorked(standardShiftLength, source);
+  const paidHours = getLeavePaidHours(source);
+  el.textContent = `Current leave/sick paid hours: ${paidHours.toFixed(2)} hrs (${standardShiftLength.toFixed(2)} - ${breakHours.toFixed(2)} break).`;
+}
+
 function updateCompanyFormVisibility() {
   const payModeEl = document.getElementById("payMode");
   const payCycleEl = document.getElementById("companyPayCycle");
   const bonusTypeEl = document.getElementById("bonusType");
-  if (!payModeEl && !payCycleEl && !bonusTypeEl) return; // not on companies page
+  const breakRuleModeEl = document.getElementById("breakRuleMode");
+  if (!payModeEl && !payCycleEl && !bonusTypeEl && !breakRuleModeEl) return; // not on companies page
 
   const dailyOTRow = document.getElementById("dailyOtFields") || document.getElementById("dailyOTRow");
   const fourWeekCycleWrap = document.getElementById("companyFourWeekCycleWrap");
@@ -2484,6 +2664,8 @@ function updateCompanyFormVisibility() {
   const bonusWindow = document.getElementById("bonusWindow");
   const bonusModeEl = document.getElementById("bonusMode");
   const bonusAmountLabel = document.getElementById("bonusAmountLabel");
+  const fixedBreakWrap = document.getElementById("fixedBreakWrap");
+  const variableBreakWrap = document.getElementById("variableBreakWrap");
 
   const setVisible = (el, isVisible) => {
     if (!el) return;
@@ -2498,6 +2680,16 @@ function updateCompanyFormVisibility() {
   const bonusMode = bonusModeEl?.value || "per_hour";
   setVisible(bonusModeWrap, bonusType === "night_window");
   setVisible(bonusWindow, bonusType === "night_window" && bonusMode === "per_hour");
+  const breakRuleMode = breakRuleModeEl?.value || "fixed";
+  setVisible(fixedBreakWrap, breakRuleMode === "fixed");
+  setVisible(variableBreakWrap, breakRuleMode === "variable");
+  if (breakRuleMode === "variable" && variableBreakWrap && !document.querySelector("#breakRuleList .break-rule-row")) {
+    renderBreakRuleEntries(getDefaultVariableBreakRules(), { preserveEmpty: true });
+  }
+  if (breakRuleMode === "fixed" && fixedBreakWrap && !String(document.getElementById("fixedBreakHours")?.value || "").trim()) {
+    const fixedInput = document.getElementById("fixedBreakHours");
+    if (fixedInput) fixedInput.value = "1";
+  }
   if (bonusAmountLabel) {
     if (bonusType === "night_window" && bonusMode === "per_hour") {
       bonusAmountLabel.textContent = "Bonus Amount Per Hour (£)";
@@ -2505,11 +2697,18 @@ function updateCompanyFormVisibility() {
       bonusAmountLabel.textContent = "Bonus Amount (£)";
     }
   }
+  updateLeavePaidHoursPreview();
 }
 
 document.addEventListener("change", (e) => {
-  if (e.target?.id === "payMode" || e.target?.id === "companyPayCycle" || e.target?.id === "bonusType" || e.target?.id === "bonusMode") {
+  if (e.target?.id === "payMode" || e.target?.id === "companyPayCycle" || e.target?.id === "bonusType" || e.target?.id === "bonusMode" || e.target?.id === "breakRuleMode") {
     updateCompanyFormVisibility();
+  }
+});
+
+document.addEventListener("input", (e) => {
+  if (e.target?.id === "standardShiftLength" || e.target?.id === "fixedBreakHours" || e.target?.matches?.(".break-rule-threshold") || e.target?.matches?.(".break-rule-hours")) {
+    updateLeavePaidHoursPreview();
   }
 });
 /* ===============================
@@ -3145,7 +3344,7 @@ function quickAddCalendarDay(dateStr, kind) {
     return;
   }
 
-  const leavePaidHours = Math.max(0, clamp0(company.standardShiftLength || 9) - 1);
+  const leavePaidHours = getLeavePaidHours(company);
   const shift = normalizeShift({
     id: generateShiftId(),
     date,
@@ -3171,7 +3370,7 @@ function quickAddCalendarDay(dateStr, kind) {
     createdAt: Date.now()
   });
 
-  const hrs = calculateHours("", "", shift.annualLeave, shift.sickDay, leavePaidHours);
+  const hrs = calculateHours("", "", shift.annualLeave, shift.sickDay, { leavePaidHours });
   shift.worked = hrs.worked;
   shift.breaks = hrs.breaks;
   shift.paid = hrs.paid;
@@ -3693,6 +3892,7 @@ document.addEventListener("DOMContentLoaded", () => {
   // Companies page
   updateCompanyFormVisibility();
   resetCompanyForm();
+  initBreakRuleBehavior();
 
   initVehicleCombobox();
 });
