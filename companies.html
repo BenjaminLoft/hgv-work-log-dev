@@ -52,6 +52,15 @@
         <option value="daily">Daily overtime (after X hours worked)</option>
       </select>
 
+      <label>Overtime Scheme</label>
+      <select id="overtimeScheme">
+        <option value="day_type">Day-based multipliers</option>
+        <option value="flat_rate">Flat overtime rate</option>
+        <option value="worked_day_sequence">Worked day sequence</option>
+        <option value="none">No overtime</option>
+      </select>
+      <div class="small" id="overtimeSchemeHelp" style="margin-top:6px;"></div>
+
       <label>Standard Shift Length (hrs incl break)</label>
       <input type="number" step="0.01" id="standardShiftLength" placeholder="Used for annual leave/sick pay and daily OT fallback, e.g. 9">
       <div class="small" style="margin-top:6px;">
@@ -139,22 +148,22 @@
         Night-window bonus supports per-hour, per-shift, or per-week logic. Flat per shift pays once per worked shift.
       </div>
 
-      <h2>Overtime Multipliers</h2>
-      <div class="grid">
-        <div>
-          <label>Mon–Fri</label>
+      <h2 id="overtimeMultipliersHeading">Overtime Multipliers</h2>
+      <div class="grid" id="overtimeMultipliersGrid">
+        <div id="otWeekdayField">
+          <label id="otWeekdayLabel">Mon–Fri</label>
           <input type="number" step="0.01" id="otWeekday" placeholder="e.g. 1.25">
         </div>
-        <div>
-          <label>Saturday</label>
+        <div id="otSaturdayField">
+          <label id="otSaturdayLabel">Saturday</label>
           <input type="number" step="0.01" id="otSaturday" placeholder="e.g. 1.25">
         </div>
-        <div>
-          <label>Sunday</label>
+        <div id="otSundayField">
+          <label id="otSundayLabel">Sunday</label>
           <input type="number" step="0.01" id="otSunday" placeholder="e.g. 1.50">
         </div>
-        <div>
-          <label>Bank Holiday</label>
+        <div id="otBankHolidayField">
+          <label id="otBankHolidayLabel">Bank Holiday</label>
           <input type="number" step="0.01" id="otBankHoliday" placeholder="e.g. 2.00">
         </div>
       </div>

@@ -50,7 +50,7 @@
     <div class="shift-card">
       <strong>2. Configure pay and shift rules</strong>
       <div class="meta" style="margin-top:8px;">
-        In the company record, set base rate, overtime mode, overtime multipliers, pay cycle, base weekly hours or daily OT threshold, minimum paid shift hours, leave allowance, standard shift length, fixed or variable break deductions, bonus rules, and night-out pay.
+        In the company record, set base rate, overtime mode, overtime scheme, overtime multipliers, pay cycle, base weekly hours or daily OT threshold, minimum paid shift hours, leave allowance, standard shift length, fixed or variable break deductions, bonus rules, and night-out pay.
       </div>
     </div>
 
@@ -94,7 +94,7 @@
     <div class="shift-card">
       <strong>How Pay Is Calculated</strong>
       <div class="meta" style="margin-top:8px;">
-        Weekly overtime companies use base weekly hours before overtime begins. Daily overtime companies use a per-shift worked-hours threshold. Base rate comes from the company unless you set a shift override. Overtime multipliers can differ for weekdays, Saturday, Sunday, and bank holidays. Breaks can be a fixed deduction or variable rules based on hours worked. Bonus rules can pay per hour in a time window, per shift, per week, or as a flat per-shift bonus. Night-out pay is added on top. Expenses are tracked separately and shown in summaries and exports.
+        Weekly overtime companies use base weekly hours before overtime begins. Daily overtime companies use a per-shift worked-hours threshold. The overtime scheme decides how overtime is priced: by day type, at one flat overtime rate, by worked-day sequence, or with no overtime premium. In the worked-day sequence scheme, unique worked dates are counted Monday to Sunday so days 1-5 can use one overtime rule, day 6 another, and day 7 or bank holiday another. Base rate comes from the company unless you set a shift override. Breaks can be a fixed deduction or variable rules based on hours worked. Bonus rules can pay per hour in a time window, per shift, per week, or as a flat per-shift bonus. Night-out pay is added on top. Expenses are tracked separately and shown in summaries and exports.
       </div>
     </div>
 
@@ -168,7 +168,7 @@
     <div class="shift-card">
       <strong>Why is overtime wrong?</strong>
       <div class="meta" style="margin-top:8px;">
-        Check the company pay mode first. Weekly overtime depends on base weekly hours. Daily overtime depends on the daily OT threshold or standard shift length fallback. Also check any shift-level overrides.
+        Check the company pay mode first. Weekly overtime depends on base weekly hours. Daily overtime depends on the daily OT threshold or standard shift length fallback. Also check the overtime scheme, the overtime multipliers attached to that scheme, and any shift-level overrides.
       </div>
     </div>
 

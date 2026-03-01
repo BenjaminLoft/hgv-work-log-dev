@@ -152,6 +152,35 @@ function normalizeBreakRules(entries) {
     .sort((a, b) => a.afterWorkedHours - b.afterWorkedHours || a.breakHours - b.breakHours);
 }
 
+function normalizeOvertimeScheme(value, payMode = "weekly") {
+  const mode = payMode === "daily" ? "daily" : "weekly";
+  const raw = String(value || "");
+  const allowed = mode === "daily"
+    ? ["day_type", "flat_rate", "none"]
+    : ["day_type", "flat_rate", "worked_day_sequence", "none"];
+  return allowed.includes(raw) ? raw : "day_type";
+}
+
+function getOvertimeSchemeLabel(scheme) {
+  if (scheme === "flat_rate") return "Flat OT Rate";
+  if (scheme === "worked_day_sequence") return "Worked Day Sequence";
+  if (scheme === "none") return "No Overtime";
+  return "Day-Based Multipliers";
+}
+
+function getOvertimeSummaryText(company) {
+  const c = company || {};
+  const scheme = normalizeOvertimeScheme(c.overtimeScheme, c.payMode || "weekly");
+  if (scheme === "none") return "OT: none";
+  if (scheme === "flat_rate") {
+    return `OT: x${Number(c.ot?.weekday || 1).toFixed(2)} • BH x${Number(c.ot?.bankHoliday || 1).toFixed(2)}`;
+  }
+  if (scheme === "worked_day_sequence") {
+    return `OT: Days 1-5 x${Number(c.ot?.weekday || 1).toFixed(2)} • Day 6 x${Number(c.ot?.saturday || 1).toFixed(2)} • Day 7 x${Number(c.ot?.sunday || 1).toFixed(2)} • BH x${Number(c.ot?.bankHoliday || 1).toFixed(2)}`;
+  }
+  return `OT: Wkday x${Number(c.ot?.weekday || 1).toFixed(2)} • Sat x${Number(c.ot?.saturday || 1).toFixed(2)} • Sun x${Number(c.ot?.sunday || 1).toFixed(2)} • BH x${Number(c.ot?.bankHoliday || 1).toFixed(2)}`;
+}
+
 function toLegacyNightBonusFromRule(rule) {
   if (!rule || rule.type !== "night_window") {
     return { mode: "none", amount: 0, start: "22:00", end: "06:00" };
@@ -182,6 +211,7 @@ function normalizeCompany(src, fallbackSettings = {}) {
     ? activeRules
     : (migratedLegacy.mode !== "none" ? [migratedLegacy] : []);
   const legacyFromRule = toLegacyNightBonusFromRule(finalRules[0] || null);
+  const payMode = (c.payMode === "daily") ? "daily" : "weekly";
   const breakRuleMode = c.breakRuleMode === "variable" ? "variable" : "fixed";
   const fixedBreakHours = Number.isFinite(Number(c.fixedBreakHours)) ? clamp0(c.fixedBreakHours) : 1;
   const breakRules = normalizeBreakRules(Array.isArray(c.breakRules) ? c.breakRules : []);
@@ -191,7 +221,8 @@ function normalizeCompany(src, fallbackSettings = {}) {
     id: String(c.id || generateCompanyId()),
     name: String(c.name || "Company"),
     baseRate: Number(c.baseRate || 0),
-    payMode: (c.payMode === "daily") ? "daily" : "weekly",
+    payMode,
+    overtimeScheme: normalizeOvertimeScheme(c.overtimeScheme, payMode),
     payCycle: (c.payCycle === "weekly" || c.payCycle === "month" || c.payCycle === "four_week") ? c.payCycle : "weekly",
     baseWeeklyHours: Number(c.baseWeeklyHours || 0),
     baseDailyPaidHours: Number(c.baseDailyPaidHours || 0),
@@ -468,6 +499,7 @@ function ensureDefaultCompany() {
     name: "Default",
     baseRate: settings.baseRate ?? 17.75,
     payMode: "weekly",                 // "weekly" | "daily"
+    overtimeScheme: "day_type",
     baseWeeklyHours: settings.baseHours ?? 45,
     dailyOTAfterWorkedHours: 0,        // used only if payMode="daily"
     minPaidShiftHours: 0,              // agency minimum paid
@@ -514,6 +546,7 @@ function getCompanyFormSeedValues() {
   return {
     baseRate: Number(source?.baseRate || 0),
     baseWeeklyHours: Number(source?.baseWeeklyHours || 0),
+    overtimeScheme: normalizeOvertimeScheme(source?.overtimeScheme, source?.payMode || "weekly"),
     standardShiftLength: Number(source?.standardShiftLength || 0),
     breakRuleMode: String(source?.breakRuleMode || "fixed"),
     fixedBreakHours: Number(source?.fixedBreakHours ?? 1),
@@ -686,6 +719,7 @@ function renderCompanies() {
       : (getUserCompanies().length === 1 && c.id !== "cmp_default");
 
     const nbText = getBonusSummaryText(c);
+    const otText = getOvertimeSummaryText(c);
     const breakText = c.breakRuleMode === "variable"
       ? (normalizeBreakRules(c.breakRules).length
           ? normalizeBreakRules(c.breakRules).map(rule => `${rule.afterWorkedHours.toFixed(2)}h -> ${rule.breakHours.toFixed(2)}h`).join(" • ")
@@ -699,6 +733,7 @@ function renderCompanies() {
         <br>
 		<div class="meta" style="margin-top:8px;">
           Pay mode: ${escapeHtml(c.payMode || "weekly")}<br>
+          OT scheme: ${escapeHtml(getOvertimeSchemeLabel(c.overtimeScheme || "day_type"))}<br>
           Rate: £${Number(c.baseRate || 0).toFixed(2)}<br>
 		  ${c.standardShiftLength ? `Std shift length: ${Number(c.standardShiftLength || 0).toFixed(2)} hrs<br>` : ""}
           ${(c.defaultStart || c.defaultFinish) ? `Defaults: ${escapeHtml(c.defaultStart || "--:--")} - ${escapeHtml(c.defaultFinish || "--:--")}<br>` : ""}
@@ -711,7 +746,7 @@ function renderCompanies() {
           ${(c.payMode === "daily")
 		  ? `Daily OT after (worked): ${Number(c.dailyOTAfterWorkedHours || 0).toFixed(2)} hrs<br>` : ``}
           Min paid shift: ${Number(c.minPaidShiftHours || 0).toFixed(2)} hrs<br>
-          OT: Wkday x${Number(c.ot?.weekday || 1).toFixed(2)} • Sat x${Number(c.ot?.saturday || 1).toFixed(2)} • Sun x${Number(c.ot?.sunday || 1).toFixed(2)} • BH x${Number(c.ot?.bankHoliday || 1).toFixed(2)}<br>
+          ${escapeHtml(otText)}<br>
           ${escapeHtml(nbText)}<br>
           Fields: Vehicle ${c.showVehicleField !== false ? "on" : "off"} • Trailers ${c.showTrailerFields !== false ? "on" : "off"} • Mileage ${c.showMileageFields ? "on" : "off"}<br>
           Assigned vehicles: ${Array.isArray(c.vehicleIds) ? c.vehicleIds.length : 0}<br>
@@ -792,13 +827,16 @@ function addOrUpdateCompany() {
   const fixedBreakHours = breakRuleMode === "fixed"
     ? (Number(document.getElementById("fixedBreakHours")?.value) || 0)
     : 0;
+  const payMode = document.getElementById("payMode")?.value || "weekly";
+  const overtimeScheme = normalizeOvertimeScheme(document.getElementById("overtimeScheme")?.value || "day_type", payMode);
 
   const company = {
     id: id || generateCompanyId(),
     name,
     baseRate,
 
-    payMode: document.getElementById("payMode")?.value || "weekly",
+    payMode,
+    overtimeScheme,
 	payCycle,
 	baseWeeklyHours: Number(document.getElementById("baseWeeklyHours")?.value) || 0,
 	standardShiftLength: Number(document.getElementById("standardShiftLength")?.value) || 0,
@@ -874,6 +912,7 @@ function editCompany(id) {
 
   // Pay mode first (so UI can react)
   setVal("payMode", c.payMode || "weekly");
+  setVal("overtimeScheme", normalizeOvertimeScheme(c.overtimeScheme, c.payMode || "weekly"));
   setVal("companyPayCycle", c.payCycle || "weekly");
   setVal("breakRuleMode", c.breakRuleMode || "fixed");
 
@@ -972,7 +1011,7 @@ function resetCompanyForm() {
   const seed = getCompanyFormSeedValues();
   const ids = [
     "companyId", "companyName", "companyBaseRate",
-    "payMode", "companyPayCycle", "baseWeeklyHours", "dailyOTAfterWorkedHours", "minPaidShiftHours",
+    "payMode", "overtimeScheme", "companyPayCycle", "baseWeeklyHours", "dailyOTAfterWorkedHours", "minPaidShiftHours",
     "companyDefaultStart", "companyDefaultFinish", "companyAnnualLeaveAllowance", "fixedBreakHours",
     "companyFourWeekCycleStart",
     "otWeekday", "otSaturday", "otSunday", "otBankHoliday",
@@ -988,6 +1027,7 @@ function resetCompanyForm() {
   // sensible defaults
   if (document.getElementById("companyBaseRate")) document.getElementById("companyBaseRate").value = seed.baseRate;
   if (document.getElementById("payMode")) document.getElementById("payMode").value = "weekly";
+  if (document.getElementById("overtimeScheme")) document.getElementById("overtimeScheme").value = seed.overtimeScheme || "day_type";
   if (document.getElementById("companyPayCycle")) document.getElementById("companyPayCycle").value = seed.payCycle;
   if (document.getElementById("baseWeeklyHours")) document.getElementById("baseWeeklyHours").value = seed.baseWeeklyHours;
   if (document.getElementById("dailyOTAfterWorkedHours")) document.getElementById("dailyOTAfterWorkedHours").value = 0;
@@ -1891,7 +1931,26 @@ function getShiftRateProfile(shift) {
   return { baseRate, ot };
 }
 
-function getShiftOTMultiplier(shift, profile) {
+function getCompanyPayMode(companyId) {
+  const c = getCompanyById(companyId);
+  return c?.payMode || "weekly";
+}
+
+function getCompanyOvertimeScheme(companyId) {
+  const c = getCompanyById(companyId);
+  return normalizeOvertimeScheme(c?.overtimeScheme, c?.payMode || "weekly");
+}
+
+function getCompanyWeeklyBaseHours(companyId) {
+  const c = getCompanyById(companyId);
+  return Number(c?.baseWeeklyHours ?? 0);
+}
+
+function isWorkedShiftForDaySequence(shift) {
+  return !!shift && !shift.annualLeave && !shift.sickDay && Number(shift.paid || 0) > 0;
+}
+
+function getShiftDayTypeOTMultiplier(shift, profile) {
   if (shift.bankHoliday) return profile.ot.bankHoliday;
 
   const day = new Date((shift.date || "") + "T00:00:00").getDay();
@@ -1900,14 +1959,164 @@ function getShiftOTMultiplier(shift, profile) {
   return profile.ot.weekday;
 }
 
-function getCompanyPayMode(companyId) {
-  const c = getCompanyById(companyId);
-  return c?.payMode || "weekly";
+function getShiftSchemeOTMultiplier(shift, profile, scheme = "day_type", dayIndex = 0) {
+  if (scheme === "flat_rate") {
+    return shift.bankHoliday ? profile.ot.bankHoliday : profile.ot.weekday;
+  }
+  if (scheme === "worked_day_sequence") {
+    if (shift.bankHoliday) return profile.ot.bankHoliday;
+    if (dayIndex >= 7) return profile.ot.sunday;
+    if (dayIndex === 6) return profile.ot.saturday;
+    return profile.ot.weekday;
+  }
+  return getShiftDayTypeOTMultiplier(shift, profile);
 }
 
-function getCompanyWeeklyBaseHours(companyId) {
-  const c = getCompanyById(companyId);
-  return Number(c?.baseWeeklyHours ?? 0);
+function allocateAgainstWeeklyBaseHours(paidHours, remainingBaseHours) {
+  const paid = clamp0(paidHours);
+  const remaining = clamp0(remainingBaseHours);
+  const baseHours = Math.min(paid, remaining);
+  const otHours = Math.max(0, paid - baseHours);
+  return {
+    baseHours,
+    otHours,
+    remainingBaseHours: Math.max(0, remaining - baseHours)
+  };
+}
+
+function buildWorkedDayIndexByDate(shiftsForWeek) {
+  const workedDates = [...new Set(
+    shiftsForWeek
+      .filter(isWorkedShiftForDaySequence)
+      .map(s => String(s.date || "").trim())
+      .filter(Boolean)
+  )].sort((a, b) => a.localeCompare(b));
+  return new Map(workedDates.map((date, index) => [date, index + 1]));
+}
+
+function buildWeeklyOvertimeAllocations(weekShifts, companyId) {
+  const scheme = getCompanyOvertimeScheme(companyId);
+  const sorted = (Array.isArray(weekShifts) ? weekShifts : [])
+    .filter(s => String(s.companyId || "") === String(companyId || ""))
+    .slice()
+    .sort((a, b) => (a.date || "").localeCompare(b.date || "") || (a.start || "").localeCompare(b.start || "") || String(a.id || "").localeCompare(String(b.id || "")));
+  const allocations = new Map();
+  const workedDayIndexByDate = buildWorkedDayIndexByDate(sorted);
+  let remainingBaseHours = getCompanyWeeklyBaseHours(companyId);
+
+  sorted.forEach(shift => {
+    const paid = clamp0(shift.paid || 0);
+    const profile = getShiftRateProfile(shift);
+    const dayIndex = workedDayIndexByDate.get(String(shift.date || "")) || 0;
+
+    if (shift.annualLeave || shift.sickDay) {
+      allocations.set(shift.id, { baseHours: paid, otHours: 0, otMultiplier: 1, dayIndex });
+      return;
+    }
+
+    if (scheme === "none") {
+      allocations.set(shift.id, { baseHours: paid, otHours: 0, otMultiplier: 1, dayIndex });
+      return;
+    }
+
+    if (scheme === "worked_day_sequence") {
+      if (shift.bankHoliday || dayIndex >= 7) {
+        allocations.set(shift.id, {
+          baseHours: 0,
+          otHours: paid,
+          otMultiplier: getShiftSchemeOTMultiplier(shift, profile, scheme, dayIndex),
+          dayIndex
+        });
+        return;
+      }
+
+      if (dayIndex === 6) {
+        allocations.set(shift.id, {
+          baseHours: 0,
+          otHours: paid,
+          otMultiplier: getShiftSchemeOTMultiplier(shift, profile, scheme, dayIndex),
+          dayIndex
+        });
+        return;
+      }
+
+      const split = allocateAgainstWeeklyBaseHours(paid, remainingBaseHours);
+      remainingBaseHours = split.remainingBaseHours;
+      allocations.set(shift.id, {
+        baseHours: split.baseHours,
+        otHours: split.otHours,
+        otMultiplier: getShiftSchemeOTMultiplier(shift, profile, scheme, dayIndex),
+        dayIndex
+      });
+      return;
+    }
+
+    if (shift.bankHoliday) {
+      allocations.set(shift.id, {
+        baseHours: 0,
+        otHours: paid,
+        otMultiplier: getShiftSchemeOTMultiplier(shift, profile, scheme, dayIndex),
+        dayIndex
+      });
+      return;
+    }
+
+    const split = allocateAgainstWeeklyBaseHours(paid, remainingBaseHours);
+    remainingBaseHours = split.remainingBaseHours;
+    allocations.set(shift.id, {
+      baseHours: split.baseHours,
+      otHours: split.otHours,
+      otMultiplier: getShiftSchemeOTMultiplier(shift, profile, scheme, dayIndex),
+      dayIndex
+    });
+  });
+
+  return allocations;
+}
+
+function getShiftPayAllocation(shift, weeklyAllocationMap = null) {
+  const company = getCompanyById(shift.companyId);
+  const payMode = shift?.overrides?.payMode ?? company?.payMode ?? "weekly";
+  const scheme = normalizeOvertimeScheme(company?.overtimeScheme, payMode);
+  const paid = clamp0(shift.paid || 0);
+  const profile = getShiftRateProfile(shift);
+
+  if (shift.annualLeave || shift.sickDay) {
+    return { baseHours: paid, otHours: 0, otMultiplier: 1 };
+  }
+
+  if (scheme === "none") {
+    return { baseHours: paid, otHours: 0, otMultiplier: 1 };
+  }
+
+  if (payMode === "daily") {
+    if (shift.bankHoliday) {
+      return {
+        baseHours: 0,
+        otHours: paid,
+        otMultiplier: getShiftSchemeOTMultiplier(shift, profile, scheme)
+      };
+    }
+
+    const split = splitPaidIntoBaseAndOT_DailyWorked(shift);
+    return {
+      baseHours: Number(split.baseHours || 0),
+      otHours: Number(split.otHours || 0),
+      otMultiplier: getShiftSchemeOTMultiplier(shift, profile, scheme)
+    };
+  }
+
+  if (weeklyAllocationMap && weeklyAllocationMap.has(shift.id)) {
+    return weeklyAllocationMap.get(shift.id);
+  }
+
+  const weekStart = getWeekStartMonday(shift.date || "");
+  const weekShifts = shifts.filter(s =>
+    getWeekStartMonday(s.date || "") === weekStart &&
+    String(s.companyId || "") === String(shift.companyId || "")
+  );
+  const fallbackMap = buildWeeklyOvertimeAllocations(weekShifts, shift.companyId);
+  return fallbackMap.get(shift.id) || { baseHours: paid, otHours: 0, otMultiplier: 1 };
 }
 
 function calcBonusForShift(shift, company, weekPaidSet, perWeekKey = "") {
@@ -2004,6 +2213,21 @@ function processShifts(group, mode = "overall") {
   let nightOutCountTotal = 0;
   let nightOutPayTotal = 0;
   const nightWeeklyPaid = new Set();
+  const weeklyAllocationsByCompany = {};
+
+  const weeklyCompanyIds = [...new Set(arr
+    .filter(s => {
+      const company = getCompanyById(s.companyId);
+      const payMode = s?.overrides?.payMode ?? company?.payMode ?? "weekly";
+      return payMode === "weekly";
+    })
+    .map(s => String(s.companyId || ""))
+    .filter(Boolean)
+  )];
+
+  weeklyCompanyIds.forEach(companyId => {
+    weeklyAllocationsByCompany[companyId] = buildWeeklyOvertimeAllocations(arr, companyId);
+  });
 
   // Normalize + totals + recompute base/ot split to avoid stale stored values
   arr.forEach(s => {
@@ -2013,10 +2237,9 @@ function processShifts(group, mode = "overall") {
     expenseTotal += Number(s.expenses?.parking || 0) + Number(s.expenses?.tolls || 0);
     nightOutCountTotal += Number(s.nightOutCount || (s.nightOut ? 1 : 0) || 0);
     nightOutPayTotal += Number(s.nightOutPay || 0);
-
-    const split = splitPaidIntoBaseAndOT_DailyWorked(s);
-    s.baseHours = split.baseHours;
-    s.otHours = split.otHours;
+    const allocation = getShiftPayAllocation(s, weeklyAllocationsByCompany[String(s.companyId || "")]);
+    s.baseHours = allocation.baseHours;
+    s.otHours = allocation.otHours;
   });
 
   // Month mode = sum per-shift pricing (no weekly allocation across month)
@@ -2025,28 +2248,18 @@ function processShifts(group, mode = "overall") {
 
     arr.forEach(s => {
       const profile = getShiftRateProfile(s);
-      const mult = getShiftOTMultiplier(s, profile);
+      const allocation = getShiftPayAllocation(s, weeklyAllocationsByCompany[String(s.companyId || "")]);
       const company = getCompanyById(s.companyId);
       const wk = getWeekStartMonday(s.date || "");
       const key = `${wk}|${String(s.companyId || "")}`;
       const bonus = calcBonusForShift(s, company, nightWeeklyPaidMonth, key);
       nightHoursTotal += Number(bonus.bonusHours || 0);
       nightPayTotal += Number(bonus.bonusPay || 0);
-
-      if (s.bankHoliday) {
-        const paid = Number(s.paid || 0);
-        otPay += paid * profile.baseRate * mult;
-        totalOTHours += paid;
-      } else if (s.annualLeave || s.sickDay) {
-        const paid = Number(s.paid || 0);
-        basePay += paid * profile.baseRate;
-      } else {
-        const baseH = Number(s.baseHours || 0);
-        const otH = Number(s.otHours || 0);
-        basePay += baseH * profile.baseRate;
-        otPay += otH * profile.baseRate * mult;
-        totalOTHours += otH;
-      }
+      const baseH = Number(allocation.baseHours || 0);
+      const otH = Number(allocation.otHours || 0);
+      basePay += baseH * profile.baseRate;
+      otPay += otH * profile.baseRate * Number(allocation.otMultiplier || 1);
+      totalOTHours += otH;
     });
 
     return {
@@ -2072,113 +2285,21 @@ function processShifts(group, mode = "overall") {
     return (a.start || "").localeCompare(b.start || "");
   });
 
-  const weeklyCandidates = [];
-
-  // First pass: price daily-mode shifts immediately, queue weekly-mode shifts
   arr.forEach(s => {
     const profile = getShiftRateProfile(s);
-    const mult = getShiftOTMultiplier(s, profile);
     const company = getCompanyById(s.companyId);
-    const payMode = s?.overrides?.payMode ?? company?.payMode ?? "weekly";
+    const allocation = getShiftPayAllocation(s, weeklyAllocationsByCompany[String(s.companyId || "")]);
 
     const bonusWeekKey = String(s.companyId || "");
     const bonus = calcBonusForShift(s, company, nightWeeklyPaid, bonusWeekKey);
     nightHoursTotal += Number(bonus.bonusHours || 0);
     nightPayTotal += Number(bonus.bonusPay || 0);
-
-    // --- Bank holiday: whole paid shift is OT
-    if (s.bankHoliday) {
-      const paid = Number(s.paid || 0);
-      otPay += paid * profile.baseRate * mult;
-      totalOTHours += paid;
-      return;
-    }
-
-    // --- Annual leave: base pay
-    if (s.annualLeave || s.sickDay) {
-      const paid = Number(s.paid || 0);
-      basePay += paid * profile.baseRate;
-      return;
-    }
-
-    // --- Daily OT mode: use baseHours/otHours split
-    if (payMode === "daily") {
-      const baseH = Number(s.baseHours || 0);
-      const otH = Number(s.otHours || 0);
-
-      basePay += baseH * profile.baseRate;
-      otPay += otH * profile.baseRate * mult;
-      totalOTHours += otH;
-      return;
-    }
-
-    // --- Weekly mode: defer OT allocation
-    weeklyCandidates.push(s);
+    const baseH = Number(allocation.baseHours || 0);
+    const otH = Number(allocation.otHours || 0);
+    basePay += baseH * profile.baseRate;
+    otPay += otH * profile.baseRate * Number(allocation.otMultiplier || 1);
+    totalOTHours += otH;
   });
-
-  // Weekly allocation
-  if (weeklyCandidates.length) {
-    if (mode === "perCompany") {
-      const remainingByCompany = {};
-
-      weeklyCandidates.forEach(s => {
-        if (!(s.companyId in remainingByCompany)) {
-          remainingByCompany[s.companyId] = getCompanyWeeklyBaseHours(s.companyId);
-        }
-
-        const profile = getShiftRateProfile(s);
-        const mult = getShiftOTMultiplier(s, profile);
-        const paid = Number(s.paid || 0);
-
-        let remaining = remainingByCompany[s.companyId];
-
-        if (remaining > 0) {
-          if (paid <= remaining) {
-            basePay += paid * profile.baseRate;
-            remainingByCompany[s.companyId] = remaining - paid;
-          } else {
-            basePay += remaining * profile.baseRate;
-            const ot = paid - remaining;
-            otPay += ot * profile.baseRate * mult;
-            totalOTHours += ot;
-            remainingByCompany[s.companyId] = 0;
-          }
-        } else {
-          otPay += paid * profile.baseRate * mult;
-          totalOTHours += paid;
-        }
-      });
-    } else {
-      const remainingByCompany = {};
-
-      weeklyCandidates.forEach(s => {
-        if (!(s.companyId in remainingByCompany)) {
-          remainingByCompany[s.companyId] = getCompanyWeeklyBaseHours(s.companyId);
-        }
-
-        const profile = getShiftRateProfile(s);
-        const mult = getShiftOTMultiplier(s, profile);
-        const paid = Number(s.paid || 0);
-        let remaining = remainingByCompany[s.companyId];
-
-        if (remaining > 0) {
-          if (paid <= remaining) {
-            basePay += paid * profile.baseRate;
-            remainingByCompany[s.companyId] = remaining - paid;
-          } else {
-            basePay += remaining * profile.baseRate;
-            const ot = paid - remaining;
-            otPay += ot * profile.baseRate * mult;
-            totalOTHours += ot;
-            remainingByCompany[s.companyId] = 0;
-          }
-        } else {
-          otPay += paid * profile.baseRate * mult;
-          totalOTHours += paid;
-        }
-      });
-    }
-  }
 
   return {
     worked: totalWorked,
@@ -2653,10 +2774,11 @@ function updateLeavePaidHoursPreview() {
 
 function updateCompanyFormVisibility() {
   const payModeEl = document.getElementById("payMode");
+  const overtimeSchemeEl = document.getElementById("overtimeScheme");
   const payCycleEl = document.getElementById("companyPayCycle");
   const bonusTypeEl = document.getElementById("bonusType");
   const breakRuleModeEl = document.getElementById("breakRuleMode");
-  if (!payModeEl && !payCycleEl && !bonusTypeEl && !breakRuleModeEl) return; // not on companies page
+  if (!payModeEl && !payCycleEl && !bonusTypeEl && !breakRuleModeEl && !overtimeSchemeEl) return; // not on companies page
 
   const dailyOTRow = document.getElementById("dailyOtFields") || document.getElementById("dailyOTRow");
   const fourWeekCycleWrap = document.getElementById("companyFourWeekCycleWrap");
@@ -2666,6 +2788,17 @@ function updateCompanyFormVisibility() {
   const bonusAmountLabel = document.getElementById("bonusAmountLabel");
   const fixedBreakWrap = document.getElementById("fixedBreakWrap");
   const variableBreakWrap = document.getElementById("variableBreakWrap");
+  const overtimeHelpEl = document.getElementById("overtimeSchemeHelp");
+  const overtimeHeadingEl = document.getElementById("overtimeMultipliersHeading");
+  const overtimeGridEl = document.getElementById("overtimeMultipliersGrid");
+  const otWeekdayField = document.getElementById("otWeekdayField");
+  const otSaturdayField = document.getElementById("otSaturdayField");
+  const otSundayField = document.getElementById("otSundayField");
+  const otBankHolidayField = document.getElementById("otBankHolidayField");
+  const otWeekdayLabel = document.getElementById("otWeekdayLabel");
+  const otSaturdayLabel = document.getElementById("otSaturdayLabel");
+  const otSundayLabel = document.getElementById("otSundayLabel");
+  const otBankHolidayLabel = document.getElementById("otBankHolidayLabel");
 
   const setVisible = (el, isVisible) => {
     if (!el) return;
@@ -2673,7 +2806,17 @@ function updateCompanyFormVisibility() {
     el.style.display = isVisible ? "" : "none";
   };
 
-  setVisible(dailyOTRow, payModeEl?.value === "daily");
+  const payMode = payModeEl?.value === "daily" ? "daily" : "weekly";
+  if (overtimeSchemeEl) {
+    [...overtimeSchemeEl.options].forEach(option => {
+      const isWorkedDaySequence = option.value === "worked_day_sequence";
+      option.hidden = payMode === "daily" && isWorkedDaySequence;
+    });
+    overtimeSchemeEl.value = normalizeOvertimeScheme(overtimeSchemeEl.value, payMode);
+  }
+  const overtimeScheme = normalizeOvertimeScheme(overtimeSchemeEl?.value || "day_type", payMode);
+
+  setVisible(dailyOTRow, payModeEl?.value === "daily" && overtimeScheme !== "none");
   setVisible(fourWeekCycleWrap, payCycleEl?.value === "four_week");
 
   const bonusType = bonusTypeEl?.value || "none";
@@ -2690,6 +2833,37 @@ function updateCompanyFormVisibility() {
     const fixedInput = document.getElementById("fixedBreakHours");
     if (fixedInput) fixedInput.value = "1";
   }
+  setVisible(overtimeHeadingEl, overtimeScheme !== "none");
+  setVisible(overtimeGridEl, overtimeScheme !== "none");
+  setVisible(otWeekdayField, overtimeScheme !== "none");
+  setVisible(otBankHolidayField, overtimeScheme !== "none");
+  setVisible(otSaturdayField, overtimeScheme === "day_type" || overtimeScheme === "worked_day_sequence");
+  setVisible(otSundayField, overtimeScheme === "day_type" || overtimeScheme === "worked_day_sequence");
+  if (otWeekdayLabel) {
+    otWeekdayLabel.textContent = overtimeScheme === "flat_rate"
+      ? "OT Multiplier"
+      : (overtimeScheme === "worked_day_sequence" ? "Days 1-5 OT" : "Mon–Fri");
+  }
+  if (otSaturdayLabel) {
+    otSaturdayLabel.textContent = overtimeScheme === "worked_day_sequence" ? "Day 6" : "Saturday";
+  }
+  if (otSundayLabel) {
+    otSundayLabel.textContent = overtimeScheme === "worked_day_sequence" ? "Day 7" : "Sunday";
+  }
+  if (otBankHolidayLabel) {
+    otBankHolidayLabel.textContent = "Bank Holiday";
+  }
+  if (overtimeHelpEl) {
+    if (overtimeScheme === "worked_day_sequence") {
+      overtimeHelpEl.textContent = "Counts unique worked dates Monday to Sunday. Days 1-5 use weekly base-hour overtime, day 6 pays the whole shift at the Day 6 multiplier, and day 7 or bank holiday pays the whole shift at the Bank Holiday multiplier.";
+    } else if (overtimeScheme === "flat_rate") {
+      overtimeHelpEl.textContent = "All overtime hours use one multiplier, with a separate bank holiday multiplier if needed.";
+    } else if (overtimeScheme === "none") {
+      overtimeHelpEl.textContent = "No overtime premium is applied. All paid hours stay at base rate.";
+    } else {
+      overtimeHelpEl.textContent = "Uses separate overtime multipliers by weekday, Saturday, Sunday, and bank holiday.";
+    }
+  }
   if (bonusAmountLabel) {
     if (bonusType === "night_window" && bonusMode === "per_hour") {
       bonusAmountLabel.textContent = "Bonus Amount Per Hour (£)";
@@ -2701,7 +2875,7 @@ function updateCompanyFormVisibility() {
 }
 
 document.addEventListener("change", (e) => {
-  if (e.target?.id === "payMode" || e.target?.id === "companyPayCycle" || e.target?.id === "bonusType" || e.target?.id === "bonusMode" || e.target?.id === "breakRuleMode") {
+  if (e.target?.id === "payMode" || e.target?.id === "overtimeScheme" || e.target?.id === "companyPayCycle" || e.target?.id === "bonusType" || e.target?.id === "bonusMode" || e.target?.id === "breakRuleMode") {
     updateCompanyFormVisibility();
   }
 });
@@ -3100,57 +3274,22 @@ function getShiftBonusAllocation(shift) {
 function getShiftCompensationDetails(shift) {
   const company = getCompanyById(shift.companyId);
   const profile = getShiftRateProfile(shift);
-  const mult = getShiftOTMultiplier(shift, profile);
   const paid = Number(shift.paid || 0);
   const worked = Number(shift.worked || 0);
   const breaks = Number(shift.breaks || 0);
-  const payMode = shift?.overrides?.payMode ?? company?.payMode ?? "weekly";
-
-  let baseHours = 0;
-  let otHours = 0;
-
-  if (shift.bankHoliday) {
-    otHours = paid;
-  } else if (shift.annualLeave || shift.sickDay) {
-    baseHours = paid;
-  } else if (payMode === "daily") {
-    const split = splitPaidIntoBaseAndOT_DailyWorked(shift);
-    baseHours = Number(split.baseHours || 0);
-    otHours = Number(split.otHours || 0);
-  } else {
-    const weekStart = getWeekStartMonday(shift.date || "");
-    const threshold = getCompanyWeeklyBaseHours(shift.companyId);
-    let remaining = Number(threshold || 0);
-    const weekShifts = shifts
-      .filter(s => getWeekStartMonday(s.date || "") === weekStart && String(s.companyId || "") === String(shift.companyId || ""))
-      .slice()
-      .sort((a, b) => (a.date || "").localeCompare(b.date || "") || (a.start || "").localeCompare(b.start || "") || String(a.id || "").localeCompare(String(b.id || "")));
-
-    for (const item of weekShifts) {
-      const itemPaid = Number(item.paid || 0);
-      if (item.bankHoliday || item.annualLeave || item.sickDay) {
-        if (item.id === shift.id) {
-          baseHours = item.annualLeave || item.sickDay ? itemPaid : 0;
-          otHours = item.bankHoliday ? itemPaid : 0;
-          break;
-        }
-        continue;
-      }
-
-      const itemBase = Math.min(itemPaid, Math.max(0, remaining));
-      const itemOt = Math.max(0, itemPaid - itemBase);
-      remaining = Math.max(0, remaining - itemBase);
-
-      if (item.id === shift.id) {
-        baseHours = itemBase;
-        otHours = itemOt;
-        break;
-      }
-    }
-  }
+  const weekStart = getWeekStartMonday(shift.date || "");
+  const weekShifts = shifts.filter(s =>
+    getWeekStartMonday(s.date || "") === weekStart &&
+    String(s.companyId || "") === String(shift.companyId || "")
+  );
+  const weeklyAllocationMap = buildWeeklyOvertimeAllocations(weekShifts, shift.companyId);
+  const allocation = getShiftPayAllocation(shift, weeklyAllocationMap);
+  const baseHours = Number(allocation.baseHours || 0);
+  const otHours = Number(allocation.otHours || 0);
+  const otMultiplier = Number(allocation.otMultiplier || 1);
 
   const basePay = baseHours * profile.baseRate;
-  const otPay = otHours * profile.baseRate * mult;
+  const otPay = otHours * profile.baseRate * otMultiplier;
   const bonus = getShiftBonusAllocation(shift);
   const bonusPay = Number(bonus.bonusPay || 0);
   const expenseParking = Number(shift.expenses?.parking || 0);
