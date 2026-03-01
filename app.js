@@ -404,49 +404,29 @@ function isSummaryFourWeekAvailable() {
 }
 
 function getSummaryPeriodMode() {
-  if (!isSummaryFourWeekAvailable()) return "month";
-  if (!settings?.summaryPeriodModeManuallySet) return "four_week";
-  return String(settings?.summaryPeriodMode || "month") === "month" ? "month" : "four_week";
+  return getHomePeriodMode();
 }
 
 function getHomePeriodMode() {
   return isSummaryFourWeekAvailable() ? "four_week" : "month";
 }
 
-function setSummaryPeriodMode(mode) {
-  settings.summaryPeriodMode = (mode === "four_week" && isSummaryFourWeekAvailable()) ? "four_week" : "month";
-  settings.summaryPeriodModeManuallySet = true;
-  saveAll();
-  syncSummaryPeriodModeUI();
-  renderCurrentPeriodTiles();
-  renderCompanySummary();
-}
-
 function syncSummaryPeriodModeUI() {
   const mode = getSummaryPeriodMode();
-  const fourWeekAvailable = isSummaryFourWeekAvailable();
-  const monthBtn = document.getElementById("periodMonthBtn");
-  const fourBtn = document.getElementById("periodFourWeekBtn");
   const tabMonth = document.getElementById("tabMonth");
   const titleEl = document.getElementById("summaryPeriodLabel");
+  const rangeEl = document.getElementById("summaryPeriodRange");
   const breakdownEl = document.getElementById("monthlyBreakdownSummary");
   const exportBtn = document.getElementById("exportSummaryPeriodBtn");
+  const exportSimpleBtn = document.getElementById("exportSummaryPeriodSimpleBtn");
+  const rangeText = getCurrentPeriodRangeLabel(mode);
 
-  if (!fourWeekAvailable && settings.summaryPeriodMode === "four_week") {
-    settings.summaryPeriodMode = "month";
-    saveAll();
-  }
-
-  if (monthBtn) monthBtn.classList.toggle("is-active", mode === "month");
-  if (fourBtn) {
-    fourBtn.classList.toggle("is-active", mode === "four_week");
-    fourBtn.hidden = !fourWeekAvailable;
-    fourBtn.style.display = fourWeekAvailable ? "" : "none";
-  }
-  if (tabMonth) tabMonth.textContent = mode === "four_week" ? "Current 4-Week Block" : "This Month";
+  if (tabMonth) tabMonth.textContent = mode === "four_week" ? "Current 4-Week Block" : "Month";
   if (titleEl) titleEl.textContent = mode === "four_week" ? "Current 4-Week Block" : "Month";
+  if (rangeEl) rangeEl.textContent = rangeText;
   if (breakdownEl) breakdownEl.textContent = mode === "four_week" ? "4-week block breakdown" : "Monthly breakdown";
   if (exportBtn) exportBtn.textContent = mode === "four_week" ? "Export 4-Week Block Payslip (PDF)" : "Export Month Payslip (PDF)";
+  if (exportSimpleBtn) exportSimpleBtn.textContent = mode === "four_week" ? "Export 4-Week Block (Simple)" : "Export Monthly (Simple)";
 }
 /* ===============================
    DEFAULT COMPANY / DEFAULT SELECTION
@@ -1044,9 +1024,16 @@ function renderVehicles() {
     }
 
     if (list) {
+      const companyNames = getVehicleCompanyNames(v);
       const div = document.createElement("div");
       div.className = "shift-card";
-      div.innerHTML = `${escapeHtml(v)} <button onclick="deleteVehicle(${i})">Delete</button>`;
+      div.innerHTML = `
+        <div>
+          <strong>${escapeHtml(v)}</strong>
+          <div class="small">${escapeHtml(companyNames.length ? companyNames.join(", ") : "Unassigned")}</div>
+        </div>
+        <button onclick="deleteVehicle(${i})">Delete</button>
+      `;
       list.appendChild(div);
     }
   });
@@ -1057,6 +1044,16 @@ function renderVehicles() {
   // Keep company vehicle assignment checklist in sync on companies page.
   const selectedIds = getSelectedVehicleIdsFromChecklist();
   renderCompanyVehicleChecklist(selectedIds);
+}
+
+function getVehicleCompanyNames(vehicleId) {
+  const target = String(vehicleId || "").toUpperCase().trim();
+  if (!target) return [];
+  return (companies || [])
+    .filter(company => Array.isArray(company?.vehicleIds) && company.vehicleIds.includes(target))
+    .map(company => String(company?.name || "").trim())
+    .filter(Boolean)
+    .sort((a, b) => a.localeCompare(b));
 }
 
 function renderVehicleMenuOptions(filterText = "") {
@@ -2164,6 +2161,12 @@ function getCurrentFourWeekRange() {
   };
 }
 
+function getCurrentPeriodRangeLabel(mode) {
+  if (mode !== "four_week") return "";
+  const r = getCurrentFourWeekRange();
+  return `${formatUkDate(r.startStr)} to ${formatUkDate(r.endStr)}`;
+}
+
 function getSummaryCycleCompany() {
   ensureDefaultCompany();
   const defaultId = getDefaultCompanyId();
@@ -2256,6 +2259,7 @@ function renderCurrentPeriodTiles() {
   if (!weekTiles && !monthTiles) return;
 
   const isSummaryPage = !!document.getElementById("panelWeek");
+  if (isSummaryPage) syncSummaryPeriodModeUI();
   const currentPeriodMode = isSummaryPage ? getSummaryPeriodMode() : getHomePeriodMode();
   const weekOrder = isSummaryPage
     ? ["worked", "paid", "baseHours", "basePay", "otHours", "otPay", "breaks", "nightPay", "nightOutPay", "expenseTotal", "total"]
@@ -2291,8 +2295,12 @@ function renderCurrentPeriodTiles() {
   renderBreakdownTiles("thisMonthTiles", "", monthResult, monthOrder);
 
   const homeHeading = document.getElementById("homeCurrentPeriodHeading");
+  const homeRange = document.getElementById("homeCurrentPeriodRange");
   if (homeHeading) {
     homeHeading.textContent = currentPeriodMode === "four_week" ? "Current 4-Week Block" : "This Month";
+  }
+  if (homeRange) {
+    homeRange.textContent = getCurrentPeriodRangeLabel(currentPeriodMode);
   }
 
   if (!isSummaryPage) {
@@ -2364,6 +2372,8 @@ function renderCompanySummary() {
   const isSummaryPage = !!document.getElementById("panelWeek");
   const summaryMode = isSummaryPage ? getSummaryPeriodMode() : getHomePeriodMode();
   const monthLabel = summaryMode === "four_week" ? "Current 4-Week Block" : "This Month";
+  const monthRangeLabel = getCurrentPeriodRangeLabel(summaryMode);
+  const monthHeaderLabel = monthRangeLabel ? `${monthLabel} (${monthRangeLabel})` : monthLabel;
 
   const weekStart = getCurrentWeekStartMonday();
   const weekEnd = addDays(weekStart, 7);
@@ -2419,7 +2429,7 @@ function renderCompanySummary() {
 
     return `
       <div class="shift-card" style="margin-top:12px;">
-        <strong>${escapeHtml(label)}</strong><br>
+        <strong>${escapeHtml(label)}</strong>${monthRangeLabel && label === monthLabel ? `<div class="small" style="margin-top:4px;">${escapeHtml(monthRangeLabel)}</div>` : ""}<br>
         Worked: ${Number(r.worked || 0).toFixed(2)} hrs<br>
         Breaks: ${Number(r.breaks || 0).toFixed(2)} hrs<br>
         Paid: ${paid.toFixed(2)} hrs<br>
@@ -2445,7 +2455,7 @@ function renderCompanySummary() {
       <div class="week-group">
         <div class="week-header" onclick="toggleCompanySummary('${cid}')">
           <span>${escapeHtml(name)}</span>
-          <span class="small">Week £${Number(w.total || 0).toFixed(2)} • ${escapeHtml(monthLabel)} £${Number(m.total || 0).toFixed(2)}</span>
+          <span class="small">Week £${Number(w.total || 0).toFixed(2)} • ${escapeHtml(monthHeaderLabel)} £${Number(m.total || 0).toFixed(2)}</span>
         </div>
         <div class="week-content" id="cmp-${cid}" style="display:none;">
           ${line("This Week", w)}
@@ -2987,8 +2997,8 @@ function formatVehicleEntryLabel(entry) {
   if (!hasMileage) return vehicle;
 
   const detail = (startMileage > 0 || finishMileage > 0)
-    ? `${mileage.toFixed(0)} (${startMileage.toFixed(0)} -> ${finishMileage.toFixed(0)})`
-    : mileage.toFixed(0);
+    ? `Mileage: ${startMileage.toFixed(0)} -> ${finishMileage.toFixed(0)}. Total: ${mileage.toFixed(0)}`
+    : `Mileage: ${mileage.toFixed(0)}`;
 
   return vehicle ? `${vehicle}: ${detail}` : detail;
 }

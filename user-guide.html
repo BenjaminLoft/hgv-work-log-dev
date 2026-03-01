@@ -33,56 +33,178 @@
   <div class="screen">
     <h1>User Guide</h1>
 
-    <h2>Getting Started</h2>
     <div class="shift-card">
-      <strong>1. Set up companies</strong>
-      <div class="meta">Go to Companies and create your employer/agency profiles. Set pay mode, overtime, and bonus rules.</div>
-    </div>
-    <div class="shift-card">
-      <strong>2. Add vehicles</strong>
-      <div class="meta">Use Vehicles page to add registrations, then assign vehicles to each company.</div>
-    </div>
-    <div class="shift-card">
-      <strong>3. Configure defaults</strong>
-      <div class="meta">In Companies, set pay, overtime, default start/finish times, leave allowance, and any company-specific rules. If you work through an agency, set the agency as your default company because it controls your pay-cycle timing.</div>
-    </div>
-    <div class="shift-card">
-      <strong>4. Enter shifts</strong>
-      <div class="meta">Use Enter Shift for work days, annual leave, sick days, mileage, expenses, and night-out pay.</div>
-    </div>
-    <div class="shift-card">
-      <strong>5. Review summaries</strong>
-      <div class="meta">Open Summary for week/month or 4-weekly views, company breakdowns, and PDF export.</div>
+      <strong>Getting Started</strong>
+      <div class="meta" style="margin-top:8px;">
+        Set up a company first. The company controls your pay rules, overtime logic, leave allowance, pay-cycle timing, default times, and whether vehicle, trailer, and mileage fields appear on the shift form.
+      </div>
     </div>
 
-    <h2 style="margin-top:18px;">Full Guide</h2>
+    <div class="shift-card">
+      <strong>1. Add your company</strong>
+      <div class="meta" style="margin-top:8px;">
+        Open Companies and create your main employer or agency. If you are paid by an agency but work for different client sites, set the agency as your default company because the default company controls 4-week block timing and other company-based defaults.
+      </div>
+    </div>
+
+    <div class="shift-card">
+      <strong>2. Configure pay and shift rules</strong>
+      <div class="meta" style="margin-top:8px;">
+        In the company record, set base rate, overtime mode, overtime multipliers, pay cycle, base weekly hours or daily OT threshold, minimum paid shift hours, leave allowance, standard shift length, bonus rules, and night-out pay.
+      </div>
+    </div>
+
+    <div class="shift-card">
+      <strong>3. Enter shifts</strong>
+      <div class="meta" style="margin-top:8px;">
+        Use Enter Shift to add worked shifts, annual leave, sick days, vehicles, trailers, mileage, defects, expenses, overrides, and night-out pay. New vehicle registrations typed on the shift form are saved automatically and assigned to the selected company.
+      </div>
+    </div>
+
+    <div class="shift-card">
+      <strong>4. Manage vehicles when needed</strong>
+      <div class="meta" style="margin-top:8px;">
+        The Vehicles page is the master list for all saved registrations. Use it to review or delete vehicles overall. Company assignment is controlled from Companies and also happens automatically when you save a shift with a typed registration.
+      </div>
+    </div>
+
+    <div class="shift-card">
+      <strong>5. Review pay and history</strong>
+      <div class="meta" style="margin-top:8px;">
+        Home gives a quick current-period view, Summary shows full weekly and pay-period totals, and Shift Calendar lets you add or edit shifts by date.
+      </div>
+    </div>
+
+    <h2 style="margin-top:18px;">Page Guide</h2>
+
+    <div class="shift-card">
+      <strong>Home</strong>
+      <div class="meta" style="margin-top:8px;">
+        Shows at-a-glance totals for This Week and your current pay period. If the default company is 4-weekly, the second section becomes the current 4-week block and shows its start and end dates. The annual leave and sickness section shows yearly totals, not monthly totals.
+      </div>
+    </div>
+
+    <div class="shift-card">
+      <strong>Enter Shift</strong>
+      <div class="meta" style="margin-top:8px;">
+        Choose the company first so the form can apply that company’s rules and defaults. Vehicles can be added one row at a time with Add Vehicle. Trailers work the same way with Add Trailer. If mileage fields are enabled for that company, each vehicle row can store start mileage, finish mileage, and the calculated total. Annual leave and sick day are mutually exclusive. Day off in lieu only applies to worked shifts. Night out, parking, tolls, and company-specific overrides are all stored on the shift.
+      </div>
+    </div>
+
+    <div class="shift-card">
+      <strong>How Pay Is Calculated</strong>
+      <div class="meta" style="margin-top:8px;">
+        Weekly overtime companies use base weekly hours before overtime begins. Daily overtime companies use a per-shift worked-hours threshold. Base rate comes from the company unless you set a shift override. Overtime multipliers can differ for weekdays, Saturday, Sunday, and bank holidays. Bonus rules can pay per hour in a time window, per shift, per week, or as a flat per-shift bonus. Night-out pay is added on top. Expenses are tracked separately and shown in summaries and exports.
+      </div>
+    </div>
+
     <div class="shift-card">
       <strong>Companies</strong>
-      <div class="meta">Each company stores rate, overtime multipliers, pay mode (weekly/daily), default times, leave allowance, bonus settings, 4-week cycle start date, and field visibility toggles for vehicle/trailers/mileage.</div>
+      <div class="meta" style="margin-top:8px;">
+        Stores all company-level logic: pay mode, pay cycle, 4-week cycle start date, leave allowance, default start and finish times, standard shift length, overtime multipliers, bonus rules, minimum paid shift hours, night-out pay, field visibility, contact details, and assigned vehicles. Only vehicles assigned to that company appear in the Enter Shift suggestions.
+      </div>
     </div>
+
     <div class="shift-card">
-      <strong>Default Company</strong>
-      <div class="meta">Your default company is used for company-based defaults and for the Summary 4-week cycle block. If you are an agency worker, set the agency as the default company even if you record shifts against different client companies.</div>
+      <strong>Vehicles</strong>
+      <div class="meta" style="margin-top:8px;">
+        Shows the full registration list across the app. Each vehicle now shows the companies it is currently assigned to. Delete with care because removing a vehicle also removes its assignment from company records.
+      </div>
     </div>
+
     <div class="shift-card">
-      <strong>Vehicle Assignment</strong>
-      <div class="meta">Vehicles are assigned per company. Enter Shift only shows vehicles assigned to the selected company, but new typed registrations are saved and assigned automatically.</div>
+      <strong>Summary</strong>
+      <div class="meta" style="margin-top:8px;">
+        The top toggle shows Week and either Month or Current 4-Week Block depending on the default company pay cycle. The current 4-week block shows its start and end dates. Summary includes overall totals, company-by-company breakdowns, leave and sickness totals, and export buttons for PDF or simple export.
+      </div>
     </div>
+
     <div class="shift-card">
-      <strong>Shift Types and Leave</strong>
-      <div class="meta">Day/Night shift flag is stored. Night sets default date to previous day on new entries. Annual Leave and Sick Day are mutually exclusive and counted in yearly stats.</div>
+      <strong>Shift Calendar</strong>
+      <div class="meta" style="margin-top:8px;">
+        Lets you browse shifts by month, click a date, add a worked shift for that date, or quickly add annual leave or a sick day. Existing shifts on the selected date can be edited from their shift cards.
+      </div>
     </div>
+
     <div class="shift-card">
-      <strong>Mileage, Expenses, and Night Out</strong>
-      <div class="meta">Mileage is calculated from start and finish mileage when enabled by company. Expenses track parking and tolls. Night-out pay is tracked and included in totals.</div>
+      <strong>Settings</strong>
+      <div class="meta" style="margin-top:8px;">
+        Settings contains update checks and backup/restore. Backup saves your companies, shifts, vehicles, and settings. Restore loads a previous backup and migrates older data formats automatically where possible.
+      </div>
     </div>
+
+    <h2 style="margin-top:18px;">Shift Detail Reference</h2>
+
     <div class="shift-card">
-      <strong>Summary and Payslip Export</strong>
-      <div class="meta">Summary supports weekly and month panel views, with monthly/4-weekly toggle. Export creates a print-ready summary including pay components and net after expenses.</div>
+      <strong>Worked Shift Fields</strong>
+      <div class="meta" style="margin-top:8px;">
+        Date, start time, finish time, shift type, vehicles, trailers, mileage, defects/notes, bank holiday flag, day off in lieu, night out, expenses, and company overrides can all affect what appears later in Summary and exports.
+      </div>
     </div>
+
     <div class="shift-card">
-      <strong>Backup and Restore</strong>
-      <div class="meta">Use the Backup & Restore section at the bottom of Shift Calendar. Restore automatically migrates older backups to the current data model.</div>
+      <strong>Vehicle and Mileage Logic</strong>
+      <div class="meta" style="margin-top:8px;">
+        Vehicle rows are stored per shift. A row can contain just a registration, or a registration plus mileage data. The shift display shows mileage as start, finish, and total. Vehicles typed during entry are converted to uppercase, saved globally, and assigned to the selected company automatically.
+      </div>
+    </div>
+
+    <div class="shift-card">
+      <strong>Leave and Sickness</strong>
+      <div class="meta" style="margin-top:8px;">
+        Annual leave and sick days use the company standard shift length to derive paid hours. Yearly leave balance is calculated as total annual leave allowance across selectable companies, plus lieu days earned, minus annual leave taken.
+      </div>
+    </div>
+
+    <h2 style="margin-top:18px;">FAQ & Troubleshooting</h2>
+
+    <div class="shift-card">
+      <strong>Why is the wrong pay period showing?</strong>
+      <div class="meta" style="margin-top:8px;">
+        Check which company is set as your default company and confirm that company’s pay cycle. A 4-weekly default company changes Summary and Home to the current 4-week block.
+      </div>
+    </div>
+
+    <div class="shift-card">
+      <strong>Why is overtime wrong?</strong>
+      <div class="meta" style="margin-top:8px;">
+        Check the company pay mode first. Weekly overtime depends on base weekly hours. Daily overtime depends on the daily OT threshold or standard shift length fallback. Also check any shift-level overrides.
+      </div>
+    </div>
+
+    <div class="shift-card">
+      <strong>Why are vehicles or mileage fields missing?</strong>
+      <div class="meta" style="margin-top:8px;">
+        Open the company and check the Shift Entry Fields section. Vehicle, trailer, and mileage fields can be turned on or off per company.
+      </div>
+    </div>
+
+    <div class="shift-card">
+      <strong>Why can’t I see a vehicle in the Enter Shift suggestions?</strong>
+      <div class="meta" style="margin-top:8px;">
+        The vehicle may not be assigned to that company yet. Assign it in Companies, or type the registration directly on the shift form and save the shift to assign it automatically.
+      </div>
+    </div>
+
+    <div class="shift-card">
+      <strong>Why does leave balance look wrong?</strong>
+      <div class="meta" style="margin-top:8px;">
+        Check each company’s annual leave allowance, make sure annual leave was logged as leave rather than a worked shift, and confirm any lieu days were recorded with the day off in lieu option.
+      </div>
+    </div>
+
+    <div class="shift-card">
+      <strong>Why is a leave or sick day paid at the wrong hours?</strong>
+      <div class="meta" style="margin-top:8px;">
+        Check the company standard shift length. That value is used for annual leave and sick day paid hours.
+      </div>
+    </div>
+
+    <div class="shift-card">
+      <strong>Why are exports or totals different from what I expected?</strong>
+      <div class="meta" style="margin-top:8px;">
+        Review company base rate, overtime multipliers, bonus rules, minimum paid shift hours, night-out pay, and any per-shift overrides. Most calculation issues come from company setup rather than the shift itself.
+      </div>
     </div>
   </div>
 </div>

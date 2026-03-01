@@ -2,7 +2,7 @@
   "name": "Drivers Logbook",
   "short_name": "Logbook",
   "description": "Track driving shifts, vehicles, defects, and overtime pay.",
-  "version": "1.0.0+81",
+  "version": "1.0.1+82",
   "start_url": "./index.html",
   "display": "standalone",
   "background_color": "#121212",

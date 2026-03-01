@@ -64,15 +64,12 @@
 	<!-- MONTH PANEL -->
 	<section id="panelMonth" class="section" role="tabpanel" aria-labelledby="tabMonth" style="display:none;">
 	  <h2 id="summaryPeriodLabel">Month</h2>
-	  <div class="segmented" role="tablist" aria-label="Pay period mode">
-		<button id="periodMonthBtn" class="seg-btn is-active" type="button" onclick="setSummaryPeriodMode('month')">Monthly</button>
-		<button id="periodFourWeekBtn" class="seg-btn" type="button" onclick="setSummaryPeriodMode('four_week')">4-Weekly</button>
-	  </div>
+	  <div id="summaryPeriodRange" class="small" style="margin-top:-6px; margin-bottom:12px;"></div>
 	  <div class="grid" id="thisMonthTiles"></div>
 
 	  <div class="button-row">
 		<button id="exportSummaryPeriodBtn" onclick="exportPayslip('month')">Export Month Payslip (PDF)</button>
-		<button class="button-secondary" onclick="exportSection('monthlySummary')">Export Monthly (Simple)</button>
+		<button id="exportSummaryPeriodSimpleBtn" class="button-secondary" onclick="exportSection('monthlySummary')">Export Monthly (Simple)</button>
 	  </div>
 
 	  <details class="details" style="margin-top:14px;">
