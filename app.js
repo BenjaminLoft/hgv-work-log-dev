@@ -155,10 +155,39 @@ function normalizeBreakRules(entries) {
 function normalizeOvertimeScheme(value, payMode = "weekly") {
   const mode = payMode === "daily" ? "daily" : "weekly";
   const raw = String(value || "");
-  const allowed = mode === "daily"
+  const allowed = getAllowedOvertimeSchemes(mode);
+  return allowed.includes(raw) ? raw : "day_type";
+}
+
+function getAllowedOvertimeSchemes(payMode = "weekly") {
+  const mode = payMode === "daily" ? "daily" : "weekly";
+  return mode === "daily"
     ? ["day_type", "flat_rate", "none"]
     : ["day_type", "flat_rate", "worked_day_sequence", "none"];
-  return allowed.includes(raw) ? raw : "day_type";
+}
+
+function normalizeWorkedDaySequenceConfig(source = {}) {
+  const baseRangeEndRaw = Math.floor(Number(source?.workedDaySequenceBaseRangeEnd));
+  const baseRangeEnd = Math.max(1, Number.isFinite(baseRangeEndRaw) ? baseRangeEndRaw : 5);
+  const midRangeEndRaw = Math.floor(Number(source?.workedDaySequenceMidRangeEnd));
+  const fallbackMidRangeEnd = Math.max(baseRangeEnd + 1, 6);
+  const midRangeEnd = Math.max(baseRangeEnd + 1, Number.isFinite(midRangeEndRaw) ? midRangeEndRaw : fallbackMidRangeEnd);
+  return { baseRangeEnd, midRangeEnd };
+}
+
+function getWorkedDaySequenceConfig(companyOrId) {
+  const source = typeof companyOrId === "string"
+    ? getCompanyById(companyOrId)
+    : (companyOrId || {});
+  return normalizeWorkedDaySequenceConfig(source);
+}
+
+function formatWorkedDaySequenceBand(startDay, endDay = null) {
+  const start = Math.max(1, Number(startDay || 1));
+  if (endDay == null) return `Days ${start}+`;
+  const end = Math.max(start, Number(endDay || start));
+  if (start === end) return `Day ${start}`;
+  return `Days ${start}-${end}`;
 }
 
 function getOvertimeSchemeLabel(scheme) {
@@ -176,7 +205,8 @@ function getOvertimeSummaryText(company) {
     return `OT: x${Number(c.ot?.weekday || 1).toFixed(2)} • BH x${Number(c.ot?.bankHoliday || 1).toFixed(2)}`;
   }
   if (scheme === "worked_day_sequence") {
-    return `OT: Days 1-5 x${Number(c.ot?.weekday || 1).toFixed(2)} • Day 6 x${Number(c.ot?.saturday || 1).toFixed(2)} • Day 7 x${Number(c.ot?.sunday || 1).toFixed(2)} • BH x${Number(c.ot?.bankHoliday || 1).toFixed(2)}`;
+    const sequence = getWorkedDaySequenceConfig(c);
+    return `OT: ${formatWorkedDaySequenceBand(1, sequence.baseRangeEnd)} x${Number(c.ot?.weekday || 1).toFixed(2)} • ${formatWorkedDaySequenceBand(sequence.baseRangeEnd + 1, sequence.midRangeEnd)} x${Number(c.ot?.saturday || 1).toFixed(2)} • ${formatWorkedDaySequenceBand(sequence.midRangeEnd + 1)} x${Number(c.ot?.sunday || 1).toFixed(2)} • BH x${Number(c.ot?.bankHoliday || 1).toFixed(2)}`;
   }
   return `OT: Wkday x${Number(c.ot?.weekday || 1).toFixed(2)} • Sat x${Number(c.ot?.saturday || 1).toFixed(2)} • Sun x${Number(c.ot?.sunday || 1).toFixed(2)} • BH x${Number(c.ot?.bankHoliday || 1).toFixed(2)}`;
 }
@@ -215,6 +245,7 @@ function normalizeCompany(src, fallbackSettings = {}) {
   const breakRuleMode = c.breakRuleMode === "variable" ? "variable" : "fixed";
   const fixedBreakHours = Number.isFinite(Number(c.fixedBreakHours)) ? clamp0(c.fixedBreakHours) : 1;
   const breakRules = normalizeBreakRules(Array.isArray(c.breakRules) ? c.breakRules : []);
+  const workedDaySequence = getWorkedDaySequenceConfig(c);
 
   return {
     ...c,
@@ -223,6 +254,8 @@ function normalizeCompany(src, fallbackSettings = {}) {
     baseRate: Number(c.baseRate || 0),
     payMode,
     overtimeScheme: normalizeOvertimeScheme(c.overtimeScheme, payMode),
+    workedDaySequenceBaseRangeEnd: workedDaySequence.baseRangeEnd,
+    workedDaySequenceMidRangeEnd: workedDaySequence.midRangeEnd,
     payCycle: (c.payCycle === "weekly" || c.payCycle === "month" || c.payCycle === "four_week") ? c.payCycle : "weekly",
     baseWeeklyHours: Number(c.baseWeeklyHours || 0),
     baseDailyPaidHours: Number(c.baseDailyPaidHours || 0),
@@ -500,6 +533,8 @@ function ensureDefaultCompany() {
     baseRate: settings.baseRate ?? 17.75,
     payMode: "weekly",                 // "weekly" | "daily"
     overtimeScheme: "day_type",
+    workedDaySequenceBaseRangeEnd: 5,
+    workedDaySequenceMidRangeEnd: 6,
     baseWeeklyHours: settings.baseHours ?? 45,
     dailyOTAfterWorkedHours: 0,        // used only if payMode="daily"
     minPaidShiftHours: 0,              // agency minimum paid
@@ -547,6 +582,8 @@ function getCompanyFormSeedValues() {
     baseRate: Number(source?.baseRate || 0),
     baseWeeklyHours: Number(source?.baseWeeklyHours || 0),
     overtimeScheme: normalizeOvertimeScheme(source?.overtimeScheme, source?.payMode || "weekly"),
+    workedDaySequenceBaseRangeEnd: getWorkedDaySequenceConfig(source).baseRangeEnd,
+    workedDaySequenceMidRangeEnd: getWorkedDaySequenceConfig(source).midRangeEnd,
     standardShiftLength: Number(source?.standardShiftLength || 0),
     breakRuleMode: String(source?.breakRuleMode || "fixed"),
     fixedBreakHours: Number(source?.fixedBreakHours ?? 1),
@@ -720,6 +757,7 @@ function renderCompanies() {
 
     const nbText = getBonusSummaryText(c);
     const otText = getOvertimeSummaryText(c);
+    const workedDaySequence = getWorkedDaySequenceConfig(c);
     const breakText = c.breakRuleMode === "variable"
       ? (normalizeBreakRules(c.breakRules).length
           ? normalizeBreakRules(c.breakRules).map(rule => `${rule.afterWorkedHours.toFixed(2)}h -> ${rule.breakHours.toFixed(2)}h`).join(" • ")
@@ -743,6 +781,7 @@ function renderCompanies() {
           ${c.payCycle === "four_week" ? `4-week cycle start: ${escapeHtml(c.fourWeekCycleStart || FOUR_WEEK_BLOCK_ANCHOR)}<br>` : ""}
           Night out pay: £${Number(c.nightOutPay || 0).toFixed(2)}<br>
           Weekly base: ${Number(c.baseWeeklyHours || 0).toFixed(2)} hrs<br>
+          ${normalizeOvertimeScheme(c.overtimeScheme, c.payMode || "weekly") === "worked_day_sequence" ? `Worked-day bands: ${escapeHtml(formatWorkedDaySequenceBand(1, workedDaySequence.baseRangeEnd))} • ${escapeHtml(formatWorkedDaySequenceBand(workedDaySequence.baseRangeEnd + 1, workedDaySequence.midRangeEnd))} • ${escapeHtml(formatWorkedDaySequenceBand(workedDaySequence.midRangeEnd + 1))}<br>` : ""}
           ${(c.payMode === "daily")
 		  ? `Daily OT after (worked): ${Number(c.dailyOTAfterWorkedHours || 0).toFixed(2)} hrs<br>` : ``}
           Min paid shift: ${Number(c.minPaidShiftHours || 0).toFixed(2)} hrs<br>
@@ -829,6 +868,10 @@ function addOrUpdateCompany() {
     : 0;
   const payMode = document.getElementById("payMode")?.value || "weekly";
   const overtimeScheme = normalizeOvertimeScheme(document.getElementById("overtimeScheme")?.value || "day_type", payMode);
+  const workedDaySequence = normalizeWorkedDaySequenceConfig({
+    workedDaySequenceBaseRangeEnd: document.getElementById("workedDaySequenceBaseRangeEnd")?.value,
+    workedDaySequenceMidRangeEnd: document.getElementById("workedDaySequenceMidRangeEnd")?.value
+  });
 
   const company = {
     id: id || generateCompanyId(),
@@ -837,6 +880,8 @@ function addOrUpdateCompany() {
 
     payMode,
     overtimeScheme,
+	workedDaySequenceBaseRangeEnd: workedDaySequence.baseRangeEnd,
+	workedDaySequenceMidRangeEnd: workedDaySequence.midRangeEnd,
 	payCycle,
 	baseWeeklyHours: Number(document.getElementById("baseWeeklyHours")?.value) || 0,
 	standardShiftLength: Number(document.getElementById("standardShiftLength")?.value) || 0,
@@ -913,6 +958,8 @@ function editCompany(id) {
   // Pay mode first (so UI can react)
   setVal("payMode", c.payMode || "weekly");
   setVal("overtimeScheme", normalizeOvertimeScheme(c.overtimeScheme, c.payMode || "weekly"));
+  setVal("workedDaySequenceBaseRangeEnd", getWorkedDaySequenceConfig(c).baseRangeEnd);
+  setVal("workedDaySequenceMidRangeEnd", getWorkedDaySequenceConfig(c).midRangeEnd);
   setVal("companyPayCycle", c.payCycle || "weekly");
   setVal("breakRuleMode", c.breakRuleMode || "fixed");
 
@@ -1011,7 +1058,7 @@ function resetCompanyForm() {
   const seed = getCompanyFormSeedValues();
   const ids = [
     "companyId", "companyName", "companyBaseRate",
-    "payMode", "overtimeScheme", "companyPayCycle", "baseWeeklyHours", "dailyOTAfterWorkedHours", "minPaidShiftHours",
+    "payMode", "overtimeScheme", "workedDaySequenceBaseRangeEnd", "workedDaySequenceMidRangeEnd", "companyPayCycle", "baseWeeklyHours", "dailyOTAfterWorkedHours", "minPaidShiftHours",
     "companyDefaultStart", "companyDefaultFinish", "companyAnnualLeaveAllowance", "fixedBreakHours",
     "companyFourWeekCycleStart",
     "otWeekday", "otSaturday", "otSunday", "otBankHoliday",
@@ -1028,6 +1075,8 @@ function resetCompanyForm() {
   if (document.getElementById("companyBaseRate")) document.getElementById("companyBaseRate").value = seed.baseRate;
   if (document.getElementById("payMode")) document.getElementById("payMode").value = "weekly";
   if (document.getElementById("overtimeScheme")) document.getElementById("overtimeScheme").value = seed.overtimeScheme || "day_type";
+  if (document.getElementById("workedDaySequenceBaseRangeEnd")) document.getElementById("workedDaySequenceBaseRangeEnd").value = seed.workedDaySequenceBaseRangeEnd || 5;
+  if (document.getElementById("workedDaySequenceMidRangeEnd")) document.getElementById("workedDaySequenceMidRangeEnd").value = seed.workedDaySequenceMidRangeEnd || 6;
   if (document.getElementById("companyPayCycle")) document.getElementById("companyPayCycle").value = seed.payCycle;
   if (document.getElementById("baseWeeklyHours")) document.getElementById("baseWeeklyHours").value = seed.baseWeeklyHours;
   if (document.getElementById("dailyOTAfterWorkedHours")) document.getElementById("dailyOTAfterWorkedHours").value = 0;
@@ -1964,9 +2013,10 @@ function getShiftSchemeOTMultiplier(shift, profile, scheme = "day_type", dayInde
     return shift.bankHoliday ? profile.ot.bankHoliday : profile.ot.weekday;
   }
   if (scheme === "worked_day_sequence") {
+    const sequence = getWorkedDaySequenceConfig(shift.companyId);
     if (shift.bankHoliday) return profile.ot.bankHoliday;
-    if (dayIndex >= 7) return profile.ot.sunday;
-    if (dayIndex === 6) return profile.ot.saturday;
+    if (dayIndex > sequence.midRangeEnd) return profile.ot.sunday;
+    if (dayIndex > sequence.baseRangeEnd) return profile.ot.saturday;
     return profile.ot.weekday;
   }
   return getShiftDayTypeOTMultiplier(shift, profile);
@@ -1996,6 +2046,7 @@ function buildWorkedDayIndexByDate(shiftsForWeek) {
 
 function buildWeeklyOvertimeAllocations(weekShifts, companyId) {
   const scheme = getCompanyOvertimeScheme(companyId);
+  const workedDaySequence = getWorkedDaySequenceConfig(companyId);
   const sorted = (Array.isArray(weekShifts) ? weekShifts : [])
     .filter(s => String(s.companyId || "") === String(companyId || ""))
     .slice()
@@ -2020,7 +2071,7 @@ function buildWeeklyOvertimeAllocations(weekShifts, companyId) {
     }
 
     if (scheme === "worked_day_sequence") {
-      if (shift.bankHoliday || dayIndex >= 7) {
+      if (shift.bankHoliday || dayIndex > workedDaySequence.midRangeEnd) {
         allocations.set(shift.id, {
           baseHours: 0,
           otHours: paid,
@@ -2030,7 +2081,7 @@ function buildWeeklyOvertimeAllocations(weekShifts, companyId) {
         return;
       }
 
-      if (dayIndex === 6) {
+      if (dayIndex > workedDaySequence.baseRangeEnd) {
         allocations.set(shift.id, {
           baseHours: 0,
           otHours: paid,
@@ -2789,6 +2840,10 @@ function updateCompanyFormVisibility() {
   const fixedBreakWrap = document.getElementById("fixedBreakWrap");
   const variableBreakWrap = document.getElementById("variableBreakWrap");
   const overtimeHelpEl = document.getElementById("overtimeSchemeHelp");
+  const workedDaySequenceWrap = document.getElementById("workedDaySequenceConfig");
+  const workedDaySequencePreview = document.getElementById("workedDaySequencePreview");
+  const workedDaySequenceBaseRangeEndEl = document.getElementById("workedDaySequenceBaseRangeEnd");
+  const workedDaySequenceMidRangeEndEl = document.getElementById("workedDaySequenceMidRangeEnd");
   const overtimeHeadingEl = document.getElementById("overtimeMultipliersHeading");
   const overtimeGridEl = document.getElementById("overtimeMultipliersGrid");
   const otWeekdayField = document.getElementById("otWeekdayField");
@@ -2808,16 +2863,31 @@ function updateCompanyFormVisibility() {
 
   const payMode = payModeEl?.value === "daily" ? "daily" : "weekly";
   if (overtimeSchemeEl) {
+    const allowedSchemes = getAllowedOvertimeSchemes(payMode);
     [...overtimeSchemeEl.options].forEach(option => {
       const isWorkedDaySequence = option.value === "worked_day_sequence";
-      option.hidden = payMode === "daily" && isWorkedDaySequence;
+      option.disabled = payMode === "daily" && isWorkedDaySequence;
     });
-    overtimeSchemeEl.value = normalizeOvertimeScheme(overtimeSchemeEl.value, payMode);
+    if (!allowedSchemes.includes(String(overtimeSchemeEl.value || ""))) {
+      overtimeSchemeEl.value = "day_type";
+    }
   }
   const overtimeScheme = normalizeOvertimeScheme(overtimeSchemeEl?.value || "day_type", payMode);
+  const workedDaySequence = normalizeWorkedDaySequenceConfig({
+    workedDaySequenceBaseRangeEnd: workedDaySequenceBaseRangeEndEl?.value,
+    workedDaySequenceMidRangeEnd: workedDaySequenceMidRangeEndEl?.value
+  });
+
+  if (workedDaySequenceBaseRangeEndEl && String(workedDaySequenceBaseRangeEndEl.value || "").trim() !== String(workedDaySequence.baseRangeEnd)) {
+    workedDaySequenceBaseRangeEndEl.value = workedDaySequence.baseRangeEnd;
+  }
+  if (workedDaySequenceMidRangeEndEl && String(workedDaySequenceMidRangeEndEl.value || "").trim() !== String(workedDaySequence.midRangeEnd)) {
+    workedDaySequenceMidRangeEndEl.value = workedDaySequence.midRangeEnd;
+  }
 
   setVisible(dailyOTRow, payModeEl?.value === "daily" && overtimeScheme !== "none");
   setVisible(fourWeekCycleWrap, payCycleEl?.value === "four_week");
+  setVisible(workedDaySequenceWrap, overtimeScheme === "worked_day_sequence");
 
   const bonusType = bonusTypeEl?.value || "none";
   const bonusMode = bonusModeEl?.value || "per_hour";
@@ -2842,20 +2912,24 @@ function updateCompanyFormVisibility() {
   if (otWeekdayLabel) {
     otWeekdayLabel.textContent = overtimeScheme === "flat_rate"
       ? "OT Multiplier"
-      : (overtimeScheme === "worked_day_sequence" ? "Days 1-5 OT" : "Mon–Fri");
+      : (overtimeScheme === "worked_day_sequence" ? `${formatWorkedDaySequenceBand(1, workedDaySequence.baseRangeEnd)} OT` : "Mon–Fri");
   }
   if (otSaturdayLabel) {
-    otSaturdayLabel.textContent = overtimeScheme === "worked_day_sequence" ? "Day 6" : "Saturday";
+    otSaturdayLabel.textContent = overtimeScheme === "worked_day_sequence"
+      ? formatWorkedDaySequenceBand(workedDaySequence.baseRangeEnd + 1, workedDaySequence.midRangeEnd)
+      : "Saturday";
   }
   if (otSundayLabel) {
-    otSundayLabel.textContent = overtimeScheme === "worked_day_sequence" ? "Day 7" : "Sunday";
+    otSundayLabel.textContent = overtimeScheme === "worked_day_sequence"
+      ? formatWorkedDaySequenceBand(workedDaySequence.midRangeEnd + 1)
+      : "Sunday";
   }
   if (otBankHolidayLabel) {
     otBankHolidayLabel.textContent = "Bank Holiday";
   }
   if (overtimeHelpEl) {
     if (overtimeScheme === "worked_day_sequence") {
-      overtimeHelpEl.textContent = "Counts unique worked dates Monday to Sunday. Days 1-5 use weekly base-hour overtime, day 6 pays the whole shift at the Day 6 multiplier, and day 7 or bank holiday pays the whole shift at the Bank Holiday multiplier.";
+      overtimeHelpEl.textContent = `Counts unique worked dates Monday to Sunday. ${formatWorkedDaySequenceBand(1, workedDaySequence.baseRangeEnd)} use weekly base-hour overtime, ${formatWorkedDaySequenceBand(workedDaySequence.baseRangeEnd + 1, workedDaySequence.midRangeEnd)} pay all hours at the middle multiplier, and ${formatWorkedDaySequenceBand(workedDaySequence.midRangeEnd + 1)} or bank holiday pay all hours at the final multiplier.`;
     } else if (overtimeScheme === "flat_rate") {
       overtimeHelpEl.textContent = "All overtime hours use one multiplier, with a separate bank holiday multiplier if needed.";
     } else if (overtimeScheme === "none") {
@@ -2863,6 +2937,9 @@ function updateCompanyFormVisibility() {
     } else {
       overtimeHelpEl.textContent = "Uses separate overtime multipliers by weekday, Saturday, Sunday, and bank holiday.";
     }
+  }
+  if (workedDaySequencePreview) {
+    workedDaySequencePreview.textContent = `Current worked-day bands: ${formatWorkedDaySequenceBand(1, workedDaySequence.baseRangeEnd)} = base overflow OT only, ${formatWorkedDaySequenceBand(workedDaySequence.baseRangeEnd + 1, workedDaySequence.midRangeEnd)} = all hours at the middle multiplier, ${formatWorkedDaySequenceBand(workedDaySequence.midRangeEnd + 1)} = all hours at the final multiplier.`;
   }
   if (bonusAmountLabel) {
     if (bonusType === "night_window" && bonusMode === "per_hour") {
@@ -2875,7 +2952,7 @@ function updateCompanyFormVisibility() {
 }
 
 document.addEventListener("change", (e) => {
-  if (e.target?.id === "payMode" || e.target?.id === "overtimeScheme" || e.target?.id === "companyPayCycle" || e.target?.id === "bonusType" || e.target?.id === "bonusMode" || e.target?.id === "breakRuleMode") {
+  if (e.target?.id === "payMode" || e.target?.id === "overtimeScheme" || e.target?.id === "workedDaySequenceBaseRangeEnd" || e.target?.id === "workedDaySequenceMidRangeEnd" || e.target?.id === "companyPayCycle" || e.target?.id === "bonusType" || e.target?.id === "bonusMode" || e.target?.id === "breakRuleMode") {
     updateCompanyFormVisibility();
   }
 });
@@ -2883,6 +2960,9 @@ document.addEventListener("change", (e) => {
 document.addEventListener("input", (e) => {
   if (e.target?.id === "standardShiftLength" || e.target?.id === "fixedBreakHours" || e.target?.matches?.(".break-rule-threshold") || e.target?.matches?.(".break-rule-hours")) {
     updateLeavePaidHoursPreview();
+  }
+  if (e.target?.id === "workedDaySequenceBaseRangeEnd" || e.target?.id === "workedDaySequenceMidRangeEnd") {
+    updateCompanyFormVisibility();
   }
 });
 /* ===============================

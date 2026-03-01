@@ -60,6 +60,19 @@
         <option value="none">No overtime</option>
       </select>
       <div class="small" id="overtimeSchemeHelp" style="margin-top:6px;"></div>
+      <div id="workedDaySequenceConfig" style="display:none; margin-top:10px;">
+        <div class="grid">
+          <div>
+            <label>Initial OT Range Ends After Day</label>
+            <input type="number" step="1" min="1" id="workedDaySequenceBaseRangeEnd" placeholder="e.g. 5">
+          </div>
+          <div>
+            <label>Next All-Hours Range Ends After Day</label>
+            <input type="number" step="1" min="2" id="workedDaySequenceMidRangeEnd" placeholder="e.g. 6">
+          </div>
+        </div>
+        <div class="small" id="workedDaySequencePreview" style="margin-top:6px;"></div>
+      </div>
 
       <label>Standard Shift Length (hrs incl break)</label>
       <input type="number" step="0.01" id="standardShiftLength" placeholder="Used for annual leave/sick pay and daily OT fallback, e.g. 9">

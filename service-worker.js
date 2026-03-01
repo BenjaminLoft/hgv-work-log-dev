@@ -1,4 +1,4 @@
-const APP_VERSION = "1.0.1+84";
+const APP_VERSION = "1.0.1+85";
 const CACHE_NAME = `hgv-log-cache-${APP_VERSION}`;
 const urlsToCache = [
   "./index.html",
