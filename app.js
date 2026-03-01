@@ -6,7 +6,7 @@
    STORAGE
 ================================ */
 
-const DATA_MODEL_VERSION = 8;
+const DATA_MODEL_VERSION = 9;
 const DATA_VERSION_KEY = "dataVersion";
 const FOUR_WEEK_BLOCK_ANCHOR = "2024-01-01";
 const DEFAULT_SETTINGS = {
@@ -19,7 +19,8 @@ const DEFAULT_SETTINGS = {
   otSunday: 1.5,
   otBankHoliday: 2,
   annualLeaveAllowance: 0,
-  summaryPeriodMode: "month"
+  summaryPeriodMode: "month",
+  summaryPeriodModeManuallySet: false
 };
 
 let shifts = JSON.parse(localStorage.getItem("shifts")) || [];
@@ -98,6 +99,7 @@ function normalizeSettings(src) {
   out.otSunday = Number(out.otSunday || 1);
   out.otBankHoliday = Number(out.otBankHoliday || 1);
   out.annualLeaveAllowance = Number(out.annualLeaveAllowance || 0);
+  out.summaryPeriodModeManuallySet = !!out.summaryPeriodModeManuallySet;
   return out;
 }
 
@@ -220,7 +222,16 @@ function normalizeShift(src) {
   if (rawOverrides.payMode === "daily" || rawOverrides.payMode === "weekly") {
     normalizedOverrides.payMode = rawOverrides.payMode;
   }
-  const normalizedVehicleEntries = normalizeVehicleEntries(Array.isArray(s.vehicleEntries) ? s.vehicleEntries : []);
+  const normalizedVehicleEntries = normalizeVehicleEntries(
+    Array.isArray(s.vehicleEntries) && s.vehicleEntries.length
+      ? s.vehicleEntries
+      : buildLegacyVehicleEntries(s)
+  );
+  const normalizedTrailers = normalizeTrailerEntries(
+    Array.isArray(s.trailers) && s.trailers.length
+      ? s.trailers
+      : buildLegacyTrailerEntries(s)
+  );
   const vehicleLabel = normalizedVehicleEntries
     .map(entry => String(entry.vehicle || "").trim())
     .filter(Boolean)
@@ -236,8 +247,9 @@ function normalizeShift(src) {
     start: String(s.start || ""),
     finish: String(s.finish || ""),
     vehicle: vehicleLabel,
-    trailer1: String(s.trailer1 || ""),
-    trailer2: String(s.trailer2 || ""),
+    trailer1: String(normalizedTrailers[0] || ""),
+    trailer2: String(normalizedTrailers[1] || ""),
+    trailers: normalizedTrailers,
     defects: String(s.defects || s.notes || ""),
     notes: String(s.notes || s.defects || ""),
     annualLeave: !!s.annualLeave,
@@ -258,6 +270,35 @@ function normalizeShift(src) {
     overrides: normalizedOverrides,
     vehicleEntries: normalizedVehicleEntries
   };
+}
+
+function buildLegacyVehicleEntries(shift) {
+  const s = (shift && typeof shift === "object") ? shift : {};
+  const vehicleList = String(s.vehicle || "")
+    .split("•")
+    .map(v => String(v || "").toUpperCase().trim())
+    .filter(Boolean);
+  const startMileage = Number(s.startMileage || 0);
+  const finishMileage = Number(s.finishMileage || 0);
+  const explicitMileage = Number(s.mileage);
+  const mileage = Number.isFinite(explicitMileage)
+    ? Math.max(0, explicitMileage)
+    : Math.max(0, finishMileage - startMileage);
+
+  if (vehicleList.length > 1) {
+    return vehicleList.map(vehicle => ({ vehicle, startMileage: 0, finishMileage: 0, mileage: 0 }));
+  }
+
+  if (vehicleList.length === 1 || startMileage > 0 || finishMileage > 0 || mileage > 0) {
+    return [{
+      vehicle: vehicleList[0] || "",
+      startMileage,
+      finishMileage,
+      mileage
+    }];
+  }
+
+  return [];
 }
 
 function normalizeVehicleEntries(entries) {
@@ -286,6 +327,20 @@ function normalizeVehicleEntries(entries) {
     entry.finishMileage > 0 ||
     entry.mileage > 0
   );
+}
+
+function buildLegacyTrailerEntries(shift) {
+  const s = (shift && typeof shift === "object") ? shift : {};
+  return [s.trailer1, s.trailer2]
+    .map(value => String(value || "").toUpperCase().trim())
+    .filter(Boolean);
+}
+
+function normalizeTrailerEntries(entries) {
+  const source = Array.isArray(entries) ? entries : [];
+  return source
+    .map(value => String(value || "").toUpperCase().replace(/\s+/g, " ").trim())
+    .filter(Boolean);
 }
 
 function migrateData(sourceVersion = getStoredDataVersion()) {
@@ -349,12 +404,18 @@ function isSummaryFourWeekAvailable() {
 }
 
 function getSummaryPeriodMode() {
-  const mode = String(settings?.summaryPeriodMode || "month");
-  return (mode === "four_week" && isSummaryFourWeekAvailable()) ? "four_week" : "month";
+  if (!isSummaryFourWeekAvailable()) return "month";
+  if (!settings?.summaryPeriodModeManuallySet) return "four_week";
+  return String(settings?.summaryPeriodMode || "month") === "month" ? "month" : "four_week";
+}
+
+function getHomePeriodMode() {
+  return isSummaryFourWeekAvailable() ? "four_week" : "month";
 }
 
 function setSummaryPeriodMode(mode) {
   settings.summaryPeriodMode = (mode === "four_week" && isSummaryFourWeekAvailable()) ? "four_week" : "month";
+  settings.summaryPeriodModeManuallySet = true;
   saveAll();
   syncSummaryPeriodModeUI();
   renderCurrentPeriodTiles();
@@ -366,6 +427,7 @@ function syncSummaryPeriodModeUI() {
   const fourWeekAvailable = isSummaryFourWeekAvailable();
   const monthBtn = document.getElementById("periodMonthBtn");
   const fourBtn = document.getElementById("periodFourWeekBtn");
+  const tabMonth = document.getElementById("tabMonth");
   const titleEl = document.getElementById("summaryPeriodLabel");
   const breakdownEl = document.getElementById("monthlyBreakdownSummary");
   const exportBtn = document.getElementById("exportSummaryPeriodBtn");
@@ -381,6 +443,7 @@ function syncSummaryPeriodModeUI() {
     fourBtn.hidden = !fourWeekAvailable;
     fourBtn.style.display = fourWeekAvailable ? "" : "none";
   }
+  if (tabMonth) tabMonth.textContent = mode === "four_week" ? "Current 4-Week Block" : "This Month";
   if (titleEl) titleEl.textContent = mode === "four_week" ? "Current 4-Week Block" : "Month";
   if (breakdownEl) breakdownEl.textContent = mode === "four_week" ? "4-week block breakdown" : "Monthly breakdown";
   if (exportBtn) exportBtn.textContent = mode === "four_week" ? "Export 4-Week Block Payslip (PDF)" : "Export Month Payslip (PDF)";
@@ -1259,31 +1322,28 @@ function applyCompanyShiftEntryVisibility(companyId) {
   if (trailerRows) {
     trailerRows.hidden = !showTrailers;
     if (!showTrailers) {
-      const t1 = document.getElementById("trailer1");
-      const t2 = document.getElementById("trailer2");
-      if (t1) t1.value = "";
-      if (t2) t2.value = "";
+      renderShiftTrailerEntries([], { preserveEmpty: false });
     }
   }
 
   renderAssignedVehicleOptions(companyId);
   renderShiftVehicleEntries(readShiftVehicleEntries(showMileage), { showVehicle, showMileage, preserveEmpty: true });
+  renderShiftTrailerEntries(readShiftTrailerEntries(), { preserveEmpty: true });
 }
 
 function getDefaultDateForShiftType(type) {
-  const d = new Date();
-  if (type === "night") d.setDate(d.getDate() - 1);
-  return d.toISOString().slice(0, 10);
+  return new Date().toISOString().slice(0, 10);
 }
 
 function initShiftTypeBehavior() {
   const shiftTypeEl = document.getElementById("shiftType");
-  const dateEl = document.getElementById("date");
-  if (!shiftTypeEl || !dateEl) return;
+  if (!shiftTypeEl) return;
 
   shiftTypeEl.addEventListener("change", () => {
-    if (editingIndex !== null) return;
-    dateEl.value = getDefaultDateForShiftType(shiftTypeEl.value);
+    const currentValue = String(shiftTypeEl.value || "day");
+    if (currentValue !== "night" && currentValue !== "day") {
+      shiftTypeEl.value = "day";
+    }
   });
 }
 
@@ -1373,7 +1433,12 @@ function renderShiftVehicleEntries(entries = [], options = {}) {
   const showVehicle = options.showVehicle ?? (company ? (company.showVehicleField !== false) : true);
   const showMileage = options.showMileage ?? !!company?.showMileageFields;
   let normalized = normalizeVehicleEntries(entries);
-  if (!normalized.length && options.preserveEmpty !== false) normalized = [{}];
+  const requestedCount = Math.max(
+    Number(options.requestedCount || 0),
+    normalized.length,
+    options.preserveEmpty === false ? 0 : 1
+  );
+  while (normalized.length < requestedCount) normalized.push({});
 
   wrap.innerHTML = normalized
     .map((entry, index) => createVehicleEntry(entry, showVehicle, showMileage, normalized.length > 1 || index > 0))
@@ -1386,13 +1451,60 @@ function addVehicleEntry() {
   const companyId = document.getElementById("company")?.value || "";
   const company = getCompanyById(companyId);
   const showMileage = !!company?.showMileageFields;
+  const entryCount = Math.max(document.querySelectorAll("#shiftVehicleEntries .vehicle-entry").length, 1) + 1;
   const entries = readShiftVehicleEntries(showMileage);
-  entries.push({});
-  renderShiftVehicleEntries(entries, { showVehicle: company ? (company.showVehicleField !== false) : true, showMileage, preserveEmpty: true });
+  renderShiftVehicleEntries(entries, {
+    showVehicle: company ? (company.showVehicleField !== false) : true,
+    showMileage,
+    preserveEmpty: true,
+    requestedCount: entryCount
+  });
+}
+
+function createTrailerEntry(value = "", canRemove = true) {
+  return `
+    <div class="inline-row trailer-entry" style="margin-top:10px;">
+      <input type="text" class="trailer-entry-value" placeholder="Trailer registration" autocomplete="off" value="${escapeHtml(String(value || "").toUpperCase().trim())}">
+      ${canRemove ? `<button type="button" class="button-secondary trailer-entry-remove">Remove</button>` : ""}
+    </div>
+  `;
+}
+
+function readShiftTrailerEntries() {
+  const wrap = document.getElementById("shiftTrailerEntries");
+  if (!wrap) return [];
+  return normalizeTrailerEntries(
+    [...wrap.querySelectorAll(".trailer-entry-value")].map(input => input.value || "")
+  );
+}
+
+function renderShiftTrailerEntries(entries = [], options = {}) {
+  const wrap = document.getElementById("shiftTrailerEntries");
+  if (!wrap) return;
+  let normalized = normalizeTrailerEntries(entries);
+  const requestedCount = Math.max(
+    Number(options.requestedCount || 0),
+    normalized.length,
+    options.preserveEmpty === false ? 0 : 1
+  );
+  while (normalized.length < requestedCount) normalized.push("");
+
+  wrap.innerHTML = normalized
+    .map((entry, index) => createTrailerEntry(entry, normalized.length > 1 || index > 0))
+    .join("");
+}
+
+function addTrailerEntry() {
+  const entryCount = Math.max(document.querySelectorAll("#shiftTrailerEntries .trailer-entry").length, 1) + 1;
+  renderShiftTrailerEntries(readShiftTrailerEntries(), {
+    preserveEmpty: true,
+    requestedCount: entryCount
+  });
 }
 
 function initVehicleEntryBehavior() {
   const wrap = document.getElementById("shiftVehicleEntries");
+  const trailerWrap = document.getElementById("shiftTrailerEntries");
   const companyEl = document.getElementById("company");
   if (!wrap) return;
 
@@ -1430,6 +1542,32 @@ function initVehicleEntryBehavior() {
     entries.splice(idx, 1);
     renderShiftVehicleEntries(entries, { preserveEmpty: true });
   });
+
+  if (trailerWrap) {
+    trailerWrap.addEventListener("input", (e) => {
+      if (!e.target.matches(".trailer-entry-value")) return;
+      const start = e.target.selectionStart || 0;
+      const end = e.target.selectionEnd || 0;
+      e.target.value = (e.target.value || "").toUpperCase().replace(/\s+/g, " ").trimStart();
+      e.target.setSelectionRange(start, end);
+    });
+
+    trailerWrap.addEventListener("change", (e) => {
+      if (!e.target.matches(".trailer-entry-value")) return;
+      e.target.value = (e.target.value || "").toUpperCase().trim();
+    });
+
+    trailerWrap.addEventListener("click", (e) => {
+      const btn = e.target.closest(".trailer-entry-remove");
+      if (!btn) return;
+      const rows = [...trailerWrap.querySelectorAll(".trailer-entry")];
+      const idx = rows.indexOf(btn.closest(".trailer-entry"));
+      if (idx < 0) return;
+      const entries = readShiftTrailerEntries();
+      entries.splice(idx, 1);
+      renderShiftTrailerEntries(entries, { preserveEmpty: true });
+    });
+  }
 
   if (companyEl) {
     companyEl.addEventListener("change", () => {
@@ -1527,6 +1665,7 @@ function addOrUpdateShift() {
   const leavePaidHours = Math.max(0, clamp0(company?.standardShiftLength || 9) - 1);
 
   const vehicleEntries = readShiftVehicleEntries(showMileage);
+  const trailers = showTrailers ? readShiftTrailerEntries() : [];
   const vehicle = vehicleEntries.map(entry => entry.vehicle).filter(Boolean).join(" • ");
   const startMileage = Number(vehicleEntries[0]?.startMileage || 0);
   const finishMileage = Number(vehicleEntries[0]?.finishMileage || 0);
@@ -1568,8 +1707,9 @@ function addOrUpdateShift() {
     shiftType,
     vehicle,
     vehicleEntries,
-    trailer1: showTrailers ? (document.getElementById("trailer1")?.value || "") : "",
-    trailer2: showTrailers ? (document.getElementById("trailer2")?.value || "") : "",
+    trailer1: trailers[0] || "",
+    trailer2: trailers[1] || "",
+    trailers,
     startMileage,
     finishMileage,
     mileage,
@@ -2116,6 +2256,7 @@ function renderCurrentPeriodTiles() {
   if (!weekTiles && !monthTiles) return;
 
   const isSummaryPage = !!document.getElementById("panelWeek");
+  const currentPeriodMode = isSummaryPage ? getSummaryPeriodMode() : getHomePeriodMode();
   const weekOrder = isSummaryPage
     ? ["worked", "paid", "baseHours", "basePay", "otHours", "otPay", "breaks", "nightPay", "nightOutPay", "expenseTotal", "total"]
     : ["worked", "otHours", "basePay", "otPay", "nightPay", "total"];
@@ -2135,7 +2276,7 @@ function renderCurrentPeriodTiles() {
   renderBreakdownTiles("thisWeekTiles", "", weekResult, weekOrder);
 
   let monthShifts = [];
-  if (isSummaryPage && getSummaryPeriodMode() === "four_week") {
+  if (currentPeriodMode === "four_week") {
     const r = getCurrentFourWeekRange();
     monthShifts = shifts.filter(s => {
       const d = dateOnlyToDate(s.date);
@@ -2149,17 +2290,24 @@ function renderCurrentPeriodTiles() {
   const monthResult = processMonthAsWeeks(monthShifts, "overall");
   renderBreakdownTiles("thisMonthTiles", "", monthResult, monthOrder);
 
-  // Index page: append annual leave taken/remaining under This Month tiles.
-  if (!isSummaryPage && monthTiles) {
+  const homeHeading = document.getElementById("homeCurrentPeriodHeading");
+  if (homeHeading) {
+    homeHeading.textContent = currentPeriodMode === "four_week" ? "Current 4-Week Block" : "This Month";
+  }
+
+  if (!isSummaryPage) {
+    const annualTiles = document.getElementById("homeAnnualStatsTiles");
     const stats = getYearlyLeaveStats(new Date().getFullYear());
     const remainingText = getLeaveBalanceText(stats.remaining);
-
-    monthTiles.insertAdjacentHTML("beforeend", `
-      <div class="tile"><div class="label">Leave Allowance</div><div class="value">${Number(stats.allowance || 0).toFixed(0)} days</div></div>
-      <div class="tile"><div class="label">Lieu Earned</div><div class="value">${Number(stats.lieuDaysEarned || 0).toFixed(0)} days</div></div>
-      <div class="tile"><div class="label">Leave Taken</div><div class="value">${Number(stats.annualLeaveTaken || 0).toFixed(0)} days</div></div>
-      <div class="tile"><div class="label">Leave Balance</div><div class="value">${remainingText}</div></div>
-    `);
+    if (annualTiles) {
+      annualTiles.innerHTML = `
+        <div class="tile"><div class="label">Leave Allowance</div><div class="value">${Number(stats.allowance || 0).toFixed(0)} days</div></div>
+        <div class="tile"><div class="label">Lieu Earned</div><div class="value">${Number(stats.lieuDaysEarned || 0).toFixed(0)} days</div></div>
+        <div class="tile"><div class="label">Leave Taken</div><div class="value">${Number(stats.annualLeaveTaken || 0).toFixed(0)} days</div></div>
+        <div class="tile"><div class="label">Sick Days Taken</div><div class="value">${Number(stats.sickDaysTaken || 0).toFixed(0)} days</div></div>
+        <div class="tile"><div class="label">Leave Balance</div><div class="value">${remainingText}</div></div>
+      `;
+    }
   }
 }
 
@@ -2213,7 +2361,8 @@ function renderCompanySummary() {
   if (!container) return;
 
   ensureDefaultCompany();
-  const summaryMode = getSummaryPeriodMode();
+  const isSummaryPage = !!document.getElementById("panelWeek");
+  const summaryMode = isSummaryPage ? getSummaryPeriodMode() : getHomePeriodMode();
   const monthLabel = summaryMode === "four_week" ? "Current 4-Week Block" : "This Month";
 
   const weekStart = getCurrentWeekStartMonday();
@@ -2819,7 +2968,13 @@ function getShiftCompensationDetails(shift) {
 }
 
 function getVehicleEntriesForDisplay(shift) {
-  return normalizeVehicleEntries(Array.isArray(shift?.vehicleEntries) ? shift.vehicleEntries : []);
+  const directEntries = normalizeVehicleEntries(Array.isArray(shift?.vehicleEntries) ? shift.vehicleEntries : []);
+  return directEntries.length ? directEntries : normalizeVehicleEntries(buildLegacyVehicleEntries(shift));
+}
+
+function getTrailerEntriesForDisplay(shift) {
+  const directEntries = normalizeTrailerEntries(Array.isArray(shift?.trailers) ? shift.trailers : []);
+  return directEntries.length ? directEntries : normalizeTrailerEntries(buildLegacyTrailerEntries(shift));
 }
 
 function formatVehicleEntryLabel(entry) {
@@ -2844,7 +2999,7 @@ function formatShiftLine(s, index) {
   const details = getShiftCompensationDetails(s);
   const isSelectedShift = String(shiftsPageState.selectedShiftId || "") === String(s.id || "");
   const defects = (s.defects || "").trim();
-  const trailerInfo = [s.trailer1, s.trailer2].filter(Boolean).join(" • ");
+  const trailerInfo = getTrailerEntriesForDisplay(s).join(" • ");
   const shiftTypeLabel = s.shiftType === "night" ? "Night" : "Day";
   const timeRange = (s.start && s.finish) ? `${s.start} - ${s.finish}` : "";
   const vehicleEntries = getVehicleEntriesForDisplay(s);
@@ -2989,6 +3144,7 @@ function quickAddCalendarDay(dateStr, kind) {
     finish: "",
     shiftType: "day",
     vehicleEntries: [],
+    trailers: [],
     trailer1: "",
     trailer2: "",
     defects: "",
@@ -3056,8 +3212,6 @@ function loadShiftForEditingIfRequested() {
   setVal("start", s.start);
   setVal("finish", s.finish);
   setVal("shiftType", s.shiftType || "day");
-  setVal("trailer1", s.trailer1);
-  setVal("trailer2", s.trailer2);
   setVal("expenseParking", s.expenses?.parking || 0);
   setVal("expenseTolls", s.expenses?.tolls || 0);
   setVal("overrideBaseRate", s.overrides?.baseRate);
@@ -3070,6 +3224,7 @@ function loadShiftForEditingIfRequested() {
   applyCompanyShiftEntryVisibility(s.companyId);
   renderAssignedVehicleOptions(s.companyId);
   renderShiftVehicleEntries(s.vehicleEntries, { preserveEmpty: true });
+  renderShiftTrailerEntries(s.trailers, { preserveEmpty: true });
 
   const defectsEl = document.getElementById("defects");
   if (defectsEl) defectsEl.value = (s.defects ?? s.notes ?? "");
@@ -3510,6 +3665,7 @@ document.addEventListener("DOMContentLoaded", () => {
   if (editingIndex === null) {
     renderAssignedVehicleOptions();
     renderShiftVehicleEntries([{}], { preserveEmpty: true });
+    renderShiftTrailerEntries([""], { preserveEmpty: true });
   }
 
   // Summary page
